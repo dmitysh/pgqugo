@@ -12,19 +12,23 @@ type TaskHandler interface {
 type TaskKinds []taskKind
 
 type taskKind struct {
-	id                   int16
-	handler              TaskHandler
-	fetchPeriod          time.Duration
-	maxAttempts          int16
-	delayBetweenAttempts time.Duration
+	id               int16
+	handler          TaskHandler
+	fetchPeriod      time.Duration
+	attemptsInterval time.Duration
+	maxAttempts      int16
+	batchSize        int32
 }
 
-func NewTaskKind(id int16, handler TaskHandler, maxAttempts int16, fetchPeriod time.Duration, delayBetweenAttempts time.Duration) taskKind {
+// TODO: options for default values
+
+func NewTaskKind(id int16, handler TaskHandler, maxAttempts int16, batchSize int32, fetchPeriod time.Duration, attemptsInterval time.Duration) taskKind {
 	return taskKind{
-		id:                   id,
-		handler:              handler,
-		maxAttempts:          maxAttempts,
-		fetchPeriod:          fetchPeriod,
-		delayBetweenAttempts: delayBetweenAttempts,
+		id:               id,
+		handler:          handler,
+		maxAttempts:      maxAttempts,
+		fetchPeriod:      fetchPeriod,
+		attemptsInterval: attemptsInterval,
+		batchSize:        batchSize,
 	}
 }

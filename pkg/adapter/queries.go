@@ -10,11 +10,11 @@ const getWaitingTasksQuery = `WITH selected AS (
 							 WHERE (status = 'new' OR (status IN ('retry', 'in_progress') AND next_attempt_time < now()))
 							   AND kind = $1
 							 ORDER BY created_at
-							 LIMIT 1
+							 LIMIT $2
 						           FOR UPDATE SKIP LOCKED
 						           )
 							UPDATE pgqueue
-							   SET status = 'in_progress', next_attempt_time = now()+$2::interval, updated_at = now()
+							   SET status = 'in_progress', next_attempt_time = now()+$3::interval, updated_at = now()
 							 WHERE id IN (SELECT id FROM selected)
 						 RETURNING id, kind, key, payload, status, attempts_left-1, attempts_elapsed+1,
 								   next_attempt_time, created_at, updated_at`

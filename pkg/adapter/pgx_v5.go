@@ -28,8 +28,8 @@ func (p *PGXv5) CreateTask(ctx context.Context, task pgqugo.FullTaskInfo) error 
 	return nil
 }
 
-func (p *PGXv5) GetWaitingTasks(ctx context.Context, kind int16, delay time.Duration) ([]pgqugo.FullTaskInfo, error) {
-	rows, err := p.pool.Query(ctx, getWaitingTasksQuery, kind, delay)
+func (p *PGXv5) GetWaitingTasks(ctx context.Context, params pgqugo.FetchParams) ([]pgqugo.FullTaskInfo, error) {
+	rows, err := p.pool.Query(ctx, getWaitingTasksQuery, params.KindID, params.BatchSize, params.AttemptsInterval)
 	if err != nil {
 		return nil, err
 	}

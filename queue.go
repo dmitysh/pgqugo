@@ -9,16 +9,24 @@ import (
 )
 
 // TODO:
-// 1) log package to zap
-// 2) сущность для каждого kind - fetcher
-// 3) батчи
+// * log package to zap
+// * сущность для каждого kind - fetcher ?
+// * батчи - ok
+// * пул воркеров
+// * метрики ?
 
 type DB interface {
 	CreateTask(ctx context.Context, task FullTaskInfo) error
-	GetWaitingTasks(ctx context.Context, kind int16, delay time.Duration) ([]FullTaskInfo, error)
+	GetWaitingTasks(ctx context.Context, fetchParams FetchParams) ([]FullTaskInfo, error)
 	SoftFailTasks(ctx context.Context, taskIDs []int64) error
 	FailTasks(ctx context.Context, taskIDs []int64) error
 	SucceedTasks(ctx context.Context, taskIDs []int64) error
+}
+
+type FetchParams struct {
+	KindID           int16
+	BatchSize        int32
+	AttemptsInterval time.Duration
 }
 
 type Queue struct {
@@ -98,7 +106,11 @@ func (q *Queue) fetchAndHandle(ctx context.Context, kind taskKind) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultFetchTimeout)
 	defer cancel()
 
-	tasks, err := q.db.GetWaitingTasks(ctx, kind.id, kind.delayBetweenAttempts)
+	tasks, err := q.db.GetWaitingTasks(ctx, FetchParams{
+		KindID:           kind.id,
+		BatchSize:        kind.batchSize,
+		AttemptsInterval: kind.attemptsInterval,
+	})
 	if err != nil {
 		return fmt.Errorf("can't fetch tasks: %w", err)
 	}
