@@ -67,7 +67,12 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 
 	h := successHandler{}
 	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(successHandleTaskKind, h, 3, 2, time.Millisecond*100, time.Minute),
+		pgqugo.NewTaskKind(successHandleTaskKind, h,
+			pgqugo.WithMaxAttempts(3),
+			pgqugo.WithBatchSize(2),
+			pgqugo.WithFetchPeriod(time.Millisecond*100),
+			pgqugo.WitAttemptsInterval(time.Minute),
+		),
 	}
 
 	q, err := pgqugo.New(adapter.NewPGX(pool), kinds)
@@ -122,7 +127,12 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 
 	h := failHandler{}
 	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(failHandleTaskKind, h, 3, 2, time.Millisecond*60, time.Millisecond*270),
+		pgqugo.NewTaskKind(failHandleTaskKind, h,
+			pgqugo.WithMaxAttempts(3),
+			pgqugo.WithBatchSize(2),
+			pgqugo.WithFetchPeriod(time.Millisecond*60),
+			pgqugo.WitAttemptsInterval(time.Millisecond*270),
+		),
 	}
 
 	q, err := pgqugo.New(adapter.NewPGX(pool), kinds)

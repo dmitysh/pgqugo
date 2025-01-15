@@ -22,13 +22,45 @@ type taskKind struct {
 
 // TODO: options for default values
 
-func NewTaskKind(id int16, handler TaskHandler, maxAttempts int16, batchSize int32, fetchPeriod time.Duration, attemptsInterval time.Duration) taskKind {
-	return taskKind{
+type TaskKindOption func(tk *taskKind)
+
+func WithMaxAttempts(n int16) TaskKindOption {
+	return func(tk *taskKind) {
+		tk.maxAttempts = n
+	}
+}
+
+func WithBatchSize(n int32) TaskKindOption {
+	return func(tk *taskKind) {
+		tk.batchSize = n
+	}
+}
+
+func WithFetchPeriod(period time.Duration) TaskKindOption {
+	return func(tk *taskKind) {
+		tk.fetchPeriod = period
+	}
+}
+
+func WitAttemptsInterval(interval time.Duration) TaskKindOption {
+	return func(tk *taskKind) {
+		tk.attemptsInterval = interval
+	}
+}
+
+func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind {
+	tk := taskKind{
 		id:               id,
 		handler:          handler,
-		maxAttempts:      maxAttempts,
-		fetchPeriod:      fetchPeriod,
-		attemptsInterval: attemptsInterval,
-		batchSize:        batchSize,
+		maxAttempts:      3,
+		fetchPeriod:      time.Millisecond * 300,
+		attemptsInterval: time.Second * 10,
+		batchSize:        10,
 	}
+
+	for _, opt := range opts {
+		opt(&tk)
+	}
+
+	return tk
 }
