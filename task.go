@@ -10,6 +10,7 @@ type Task struct {
 
 type ProcessingTask struct {
 	Task
+	AttemptsLeft    int16
 	AttemptsElapsed int16
 }
 

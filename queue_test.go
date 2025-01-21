@@ -2,6 +2,7 @@ package pgqugo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/rand/v2"
 	"strconv"
@@ -31,7 +32,19 @@ const (
 
 type successHandler struct{}
 
-func (h successHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
+func (h successHandler) HandleTask(_ context.Context, task pgqugo.ProcessingTask) error {
+	type payload struct {
+		SleepMS int `json:"sleep_ms"`
+	}
+	var p payload
+
+	err := json.Unmarshal([]byte(task.Payload), &p)
+	if err != nil {
+		panic(err)
+	}
+
+	time.Sleep(time.Millisecond * time.Duration(p.SleepMS))
+
 	return nil
 }
 
@@ -70,17 +83,17 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 		pgqugo.NewTaskKind(successHandleTaskKind, h,
 			pgqugo.WithMaxAttempts(3),
 			pgqugo.WithBatchSize(2),
-			pgqugo.WithFetchPeriod(time.Millisecond*100),
-			pgqugo.WitAttemptsInterval(time.Minute),
+			pgqugo.WithWorkerCount(4),
+			pgqugo.WithFetchPeriod(time.Millisecond*350),
+			pgqugo.WithAttemptsInterval(time.Minute),
 		),
 	}
 
-	q, err := pgqugo.New(adapter.NewPGX(pool), kinds)
-	require.NoError(t, err)
+	q := pgqugo.New(adapter.NewPGX(pool), kinds)
 
 	task := pgqugo.Task{
 		Kind:    successHandleTaskKind,
-		Payload: "{}",
+		Payload: `{"sleep_ms": 100}`,
 	}
 
 	for i := 0; i < 3; i++ {
@@ -91,7 +104,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	q.Start(ctx)
+	q.Start()
 	time.Sleep(time.Second)
 	q.Stop()
 
@@ -108,7 +121,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 	for _, ti := range taskInfos {
 		assert.Equal(t, successHandleTaskKind, ti.Kind)
 		assert.NotNil(t, ti.Key)
-		assert.Equal(t, "{}", ti.Payload)
+		assert.Equal(t, `{"sleep_ms": 100}`, ti.Payload)
 		assert.Equal(t, "succeeded", ti.Status)
 		assert.Equal(t, int16(2), ti.AttemptsLeft)
 		assert.Equal(t, int16(1), ti.AttemptsElapsed)
@@ -130,13 +143,13 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 		pgqugo.NewTaskKind(failHandleTaskKind, h,
 			pgqugo.WithMaxAttempts(3),
 			pgqugo.WithBatchSize(2),
+			pgqugo.WithWorkerCount(4),
 			pgqugo.WithFetchPeriod(time.Millisecond*60),
-			pgqugo.WitAttemptsInterval(time.Millisecond*270),
+			pgqugo.WithAttemptsInterval(time.Millisecond*270),
 		),
 	}
 
-	q, err := pgqugo.New(adapter.NewPGX(pool), kinds)
-	require.NoError(t, err)
+	q := pgqugo.New(adapter.NewPGX(pool), kinds)
 
 	task := pgqugo.Task{
 		Kind:    failHandleTaskKind,
@@ -150,7 +163,7 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 		err = q.CreateTask(ctx, task)
 		require.NoError(t, err)
 	}
-	q.Start(ctx)
+	q.Start()
 	// check retrying
 
 	time.Sleep(time.Millisecond * 500)

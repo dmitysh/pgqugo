@@ -43,8 +43,8 @@ func (p *PGXv5) GetWaitingTasks(ctx context.Context, params pgqugo.FetchParams) 
 	return taskInfos, nil
 }
 
-func (p *PGXv5) SucceedTasks(ctx context.Context, taskIDs []int64) error {
-	_, err := p.pool.Exec(ctx, succeedTasksQuery, taskIDs)
+func (p *PGXv5) SucceedTask(ctx context.Context, taskID int64) error {
+	_, err := p.pool.Exec(ctx, succeedTasksQuery, taskID)
 	if err != nil {
 		return err
 	}
@@ -52,8 +52,8 @@ func (p *PGXv5) SucceedTasks(ctx context.Context, taskIDs []int64) error {
 	return nil
 }
 
-func (p *PGXv5) SoftFailTasks(ctx context.Context, taskIDs []int64) error {
-	_, err := p.pool.Exec(ctx, softFailTasksQuery, taskIDs)
+func (p *PGXv5) SoftFailTask(ctx context.Context, taskID int64) error {
+	_, err := p.pool.Exec(ctx, softFailTasksQuery, taskID)
 	if err != nil {
 		return err
 	}
@@ -61,8 +61,8 @@ func (p *PGXv5) SoftFailTasks(ctx context.Context, taskIDs []int64) error {
 	return nil
 }
 
-func (p *PGXv5) FailTasks(ctx context.Context, taskIDs []int64) error {
-	_, err := p.pool.Exec(ctx, failTasksQuery, taskIDs)
+func (p *PGXv5) FailTask(ctx context.Context, taskID int64) error {
+	_, err := p.pool.Exec(ctx, failTasksQuery, taskID)
 	if err != nil {
 		return err
 	}

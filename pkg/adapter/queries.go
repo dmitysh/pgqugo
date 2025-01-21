@@ -23,18 +23,18 @@ const succeedTasksQuery = `UPDATE pgqueue
 		     				  SET status = 'succeeded', attempts_left = attempts_left-1, 
 		        				  attempts_elapsed = attempts_elapsed+1, next_attempt_time = null,
 		         				  updated_at = now()
-						    WHERE id = ANY($1)
+						    WHERE id = $1
 							  AND status = 'in_progress'`
 
 const softFailTasksQuery = `UPDATE pgqueue
 		     				   SET status = 'retry', attempts_left = attempts_left-1, 
 		         				   attempts_elapsed = attempts_elapsed+1, updated_at = now()
-		  					 WHERE id = ANY($1)
+		  					 WHERE id = $1
 		    				   AND status = 'in_progress'`
 
 const failTasksQuery = `UPDATE pgqueue
 		     			   SET status = 'failed', attempts_left = 0, 
 		         			   attempts_elapsed = attempts_elapsed+1, next_attempt_time = null,
 		         			   updated_at = now()
-					     WHERE id = ANY($1)
+					     WHERE id = $1
 						   AND status = 'in_progress'`

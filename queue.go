@@ -6,26 +6,29 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/DmitySH/wopo"
 )
 
 // TODO:
 // * log package to zap
-// * сущность для каждого kind - fetcher ?
-// * батчи - ok
-// * пул воркеров
 // * метрики ?
+
+// TODO: benchmarks
+
+type empty = struct{}
 
 type DB interface {
 	CreateTask(ctx context.Context, task FullTaskInfo) error
 	GetWaitingTasks(ctx context.Context, fetchParams FetchParams) ([]FullTaskInfo, error)
-	SoftFailTasks(ctx context.Context, taskIDs []int64) error
-	FailTasks(ctx context.Context, taskIDs []int64) error
-	SucceedTasks(ctx context.Context, taskIDs []int64) error
+	SoftFailTask(ctx context.Context, taskID int64) error
+	FailTask(ctx context.Context, taskID int64) error
+	SucceedTask(ctx context.Context, taskID int64) error
 }
 
 type FetchParams struct {
 	KindID           int16
-	BatchSize        int32
+	BatchSize        int
 	AttemptsInterval time.Duration
 }
 
@@ -34,13 +37,13 @@ type Queue struct {
 	kinds map[int16]taskKind
 
 	stopWg sync.WaitGroup
-	stopCh chan struct{}
+	stopCh chan empty
 }
 
-func New(db DB, kinds TaskKinds) (*Queue, error) {
+func New(db DB, kinds TaskKinds) *Queue {
 	err := validateKinds(kinds)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	kindsMap := make(map[int16]taskKind, len(kinds))
@@ -52,47 +55,56 @@ func New(db DB, kinds TaskKinds) (*Queue, error) {
 		db:     db,
 		kinds:  kindsMap,
 		stopWg: sync.WaitGroup{},
-		stopCh: make(chan struct{}),
-	}, nil
+		stopCh: make(chan empty),
+	}
 }
 
 func validateKinds(kinds TaskKinds) error {
-	uniqueKinds := map[int16]struct{}{}
+	uniqueKinds := map[int16]empty{}
 
 	for _, kind := range kinds {
 		if _, exists := uniqueKinds[kind.id]; exists {
 			return fmt.Errorf("task kinds keys must be unique, error kind: %d", kind.id)
 		}
 
-		uniqueKinds[kind.id] = struct{}{}
-
-		if kind.maxAttempts <= 0 {
-			return fmt.Errorf("number of attempts must be positive, error kind: %d", kind.id)
-		}
+		uniqueKinds[kind.id] = empty{}
 	}
 
 	return nil
 }
 
-func (q *Queue) Start(ctx context.Context) {
+func (q *Queue) Start() {
 	for _, kind := range q.kinds {
-		go q.workLoop(ctx, kind)
+		go q.workLoop(kind)
 	}
 }
 
-func (q *Queue) workLoop(ctx context.Context, kind taskKind) {
+func (q *Queue) workLoop(kind taskKind) {
 	q.stopWg.Add(1)
 	defer q.stopWg.Done()
 
 	t := time.NewTicker(kind.fetchPeriod)
 	defer t.Stop()
 
+	e := executor{
+		tk: kind,
+		db: q.db,
+	}
+	wp := wopo.NewPool(
+		e.execute,
+		wopo.WithWorkerCount[FullTaskInfo, empty](kind.workerCount),
+		wopo.WithTaskBufferSize[FullTaskInfo, empty](kind.workerCount/2),
+		wopo.WithResultBufferSize[FullTaskInfo, empty](-1),
+	)
+	wp.Start()
+
 	for {
 		select {
 		case <-q.stopCh:
+			wp.Stop()
 			return
 		case <-t.C:
-			err := q.fetchAndHandle(ctx, kind)
+			err := q.fetchAndPushTasks(kind, wp)
 			if err != nil {
 				log.Println(err)
 			}
@@ -100,10 +112,10 @@ func (q *Queue) workLoop(ctx context.Context, kind taskKind) {
 	}
 }
 
-func (q *Queue) fetchAndHandle(ctx context.Context, kind taskKind) error {
+func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[FullTaskInfo, empty]) error {
 	const defaultFetchTimeout = time.Second * 3
 
-	ctx, cancel := context.WithTimeout(ctx, defaultFetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFetchTimeout)
 	defer cancel()
 
 	tasks, err := q.db.GetWaitingTasks(ctx, FetchParams{
@@ -115,47 +127,10 @@ func (q *Queue) fetchAndHandle(ctx context.Context, kind taskKind) error {
 		return fmt.Errorf("can't fetch tasks: %w", err)
 	}
 
-	succeededTaskIDs := make([]int64, 0)
-	softFailedTaskIDs := make([]int64, 0)
-	failedTaskIDs := make([]int64, 0)
-
+	// TODO: add context with timeout
 	for i := 0; i < len(tasks); i++ {
-		pt := ProcessingTask{
-			Task: Task{
-				Kind:    tasks[i].Kind,
-				Key:     tasks[i].Key,
-				Payload: tasks[i].Payload,
-			},
-			AttemptsElapsed: tasks[i].AttemptsElapsed,
-		}
-
-		handlerErr := kind.handler.HandleTask(ctx, pt)
-		if handlerErr != nil {
-			log.Println(handlerErr)
-
-			if tasks[i].AttemptsLeft == 0 {
-				failedTaskIDs = append(failedTaskIDs, tasks[i].ID)
-			} else {
-				softFailedTaskIDs = append(softFailedTaskIDs, tasks[i].ID)
-			}
-		} else {
-			succeededTaskIDs = append(succeededTaskIDs, tasks[i].ID)
-		}
-	}
-
-	err = q.db.SucceedTasks(ctx, succeededTaskIDs)
-	if err != nil {
-		return fmt.Errorf("can't succeed tasks: %w", err)
-	}
-
-	err = q.db.SoftFailTasks(ctx, softFailedTaskIDs)
-	if err != nil {
-		return fmt.Errorf("can't soft fail tasks: %w", err)
-	}
-
-	err = q.db.FailTasks(ctx, failedTaskIDs)
-	if err != nil {
-		return fmt.Errorf("can't fail tasks: %w", err)
+		taskCtx := context.Background()
+		wp.PushTask(taskCtx, tasks[i])
 	}
 
 	return nil

@@ -13,39 +13,13 @@ type TaskKinds []taskKind
 
 type taskKind struct {
 	id               int16
-	handler          TaskHandler
 	fetchPeriod      time.Duration
 	attemptsInterval time.Duration
 	maxAttempts      int16
-	batchSize        int32
-}
+	batchSize        int
+	workerCount      int
 
-// TODO: options for default values
-
-type TaskKindOption func(tk *taskKind)
-
-func WithMaxAttempts(n int16) TaskKindOption {
-	return func(tk *taskKind) {
-		tk.maxAttempts = n
-	}
-}
-
-func WithBatchSize(n int32) TaskKindOption {
-	return func(tk *taskKind) {
-		tk.batchSize = n
-	}
-}
-
-func WithFetchPeriod(period time.Duration) TaskKindOption {
-	return func(tk *taskKind) {
-		tk.fetchPeriod = period
-	}
-}
-
-func WitAttemptsInterval(interval time.Duration) TaskKindOption {
-	return func(tk *taskKind) {
-		tk.attemptsInterval = interval
-	}
+	handler TaskHandler
 }
 
 func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind {
@@ -56,6 +30,7 @@ func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind
 		fetchPeriod:      time.Millisecond * 300,
 		attemptsInterval: time.Second * 10,
 		batchSize:        10,
+		workerCount:      3,
 	}
 
 	for _, opt := range opts {
@@ -63,4 +38,56 @@ func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind
 	}
 
 	return tk
+}
+
+type TaskKindOption func(tk *taskKind)
+
+func WithMaxAttempts(n int16) TaskKindOption {
+	if n <= 0 {
+		panic("number of attempts must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.maxAttempts = n
+	}
+}
+
+func WithBatchSize(n int) TaskKindOption {
+	if n <= 0 {
+		panic("batch size must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.batchSize = n
+	}
+}
+
+func WithFetchPeriod(period time.Duration) TaskKindOption {
+	if period <= 0 {
+		panic("fetch period must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.fetchPeriod = period
+	}
+}
+
+func WithAttemptsInterval(interval time.Duration) TaskKindOption {
+	if interval <= 0 {
+		panic("attempts interval must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.attemptsInterval = interval
+	}
+}
+
+func WithWorkerCount(n int) TaskKindOption {
+	if n <= 0 {
+		panic("number of workers must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.workerCount = n
+	}
 }
