@@ -23,7 +23,10 @@ func (e executor) execute(ctx context.Context, task FullTaskInfo) (empty, error)
 		AttemptsLeft:    task.AttemptsLeft,
 	}
 
-	handlerErr := e.tk.handler.HandleTask(ctx, pt)
+	taskCtx, taskCancel := context.WithTimeout(ctx, e.tk.attemptTimeout)
+	defer taskCancel()
+
+	handlerErr := e.tk.handler.HandleTask(taskCtx, pt)
 	if handlerErr != nil {
 		log.Println(handlerErr)
 

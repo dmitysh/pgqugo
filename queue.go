@@ -13,6 +13,9 @@ import (
 // TODO:
 // * log package to zap
 // * метрики ?
+// transactions
+// cleaner
+// jitter
 
 // TODO: benchmarks
 
@@ -114,11 +117,12 @@ func (q *Queue) workLoop(kind taskKind) {
 
 func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[FullTaskInfo, empty]) error {
 	const defaultFetchTimeout = time.Second * 3
+	ctx := context.Background()
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultFetchTimeout)
-	defer cancel()
+	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), defaultFetchTimeout)
+	defer fetchCancel()
 
-	tasks, err := q.db.GetWaitingTasks(ctx, FetchParams{
+	tasks, err := q.db.GetWaitingTasks(fetchCtx, FetchParams{
 		KindID:           kind.id,
 		BatchSize:        kind.batchSize,
 		AttemptsInterval: kind.attemptsInterval,
@@ -127,10 +131,8 @@ func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[FullTaskInfo, emp
 		return fmt.Errorf("can't fetch tasks: %w", err)
 	}
 
-	// TODO: add context with timeout
 	for i := 0; i < len(tasks); i++ {
-		taskCtx := context.Background()
-		wp.PushTask(taskCtx, tasks[i])
+		wp.PushTask(ctx, tasks[i])
 	}
 
 	return nil

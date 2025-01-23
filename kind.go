@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+const (
+	year = time.Hour * 24 * 365
+)
+
 type TaskHandler interface {
 	HandleTask(ctx context.Context, task ProcessingTask) error
 }
@@ -12,25 +16,28 @@ type TaskHandler interface {
 type TaskKinds []taskKind
 
 type taskKind struct {
-	id               int16
+	id      int16
+	handler TaskHandler
+
 	fetchPeriod      time.Duration
 	attemptsInterval time.Duration
 	maxAttempts      int16
 	batchSize        int
 	workerCount      int
-
-	handler TaskHandler
+	attemptTimeout   time.Duration
 }
 
 func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind {
 	tk := taskKind{
-		id:               id,
-		handler:          handler,
+		id:      id,
+		handler: handler,
+
 		maxAttempts:      3,
 		fetchPeriod:      time.Millisecond * 300,
 		attemptsInterval: time.Second * 10,
 		batchSize:        10,
 		workerCount:      3,
+		attemptTimeout:   year,
 	}
 
 	for _, opt := range opts {
@@ -89,5 +96,11 @@ func WithWorkerCount(n int) TaskKindOption {
 
 	return func(tk *taskKind) {
 		tk.workerCount = n
+	}
+}
+
+func WithAttemptTimeout(timeout time.Duration) TaskKindOption {
+	return func(tk *taskKind) {
+		tk.attemptTimeout = timeout
 	}
 }

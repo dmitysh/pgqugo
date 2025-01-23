@@ -28,30 +28,44 @@ const (
 const (
 	successHandleTaskKind = int16(iota) + 1
 	failHandleTaskKind
+	timeoutTaskKind
 )
 
-type successHandler struct{}
-
-func (h successHandler) HandleTask(_ context.Context, task pgqugo.ProcessingTask) error {
-	type payload struct {
-		SleepMS int `json:"sleep_ms"`
-	}
-	var p payload
-
-	err := json.Unmarshal([]byte(task.Payload), &p)
-	if err != nil {
-		panic(err)
-	}
-
-	time.Sleep(time.Millisecond * time.Duration(p.SleepMS))
-
-	return nil
+type handler struct {
+	kind int16
 }
 
-type failHandler struct{}
+func newHandler(kind int16) handler {
+	return handler{kind: kind}
+}
 
-func (h failHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
-	return errFailed
+func (h handler) HandleTask(ctx context.Context, task pgqugo.ProcessingTask) error {
+	switch h.kind {
+	case successHandleTaskKind:
+		type payload struct {
+			SleepMS int `json:"sleep_ms"`
+		}
+		var p payload
+
+		err := json.Unmarshal([]byte(task.Payload), &p)
+		if err != nil {
+			panic(err)
+		}
+
+		time.Sleep(time.Millisecond * time.Duration(p.SleepMS))
+		return nil
+	case failHandleTaskKind:
+		return errFailed
+	case timeoutTaskKind:
+		select {
+		case <-time.After(time.Second):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	default:
+		panic("unknown kind")
+	}
 }
 
 func newTestPGXPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
@@ -72,15 +86,16 @@ func newTestPGXPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 	t.Parallel()
 
+	kind := successHandleTaskKind
 	ctx := context.Background()
 
 	pool := newTestPGXPool(ctx, t)
-	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, successHandleTaskKind)
+	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, kind)
 	require.NoError(t, err)
 
-	h := successHandler{}
+	h := newHandler(kind)
 	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(successHandleTaskKind, h,
+		pgqugo.NewTaskKind(kind, h,
 			pgqugo.WithMaxAttempts(3),
 			pgqugo.WithBatchSize(2),
 			pgqugo.WithWorkerCount(4),
@@ -92,7 +107,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 	q := pgqugo.New(adapter.NewPGX(pool), kinds)
 
 	task := pgqugo.Task{
-		Kind:    successHandleTaskKind,
+		Kind:    kind,
 		Payload: `{"sleep_ms": 100}`,
 	}
 
@@ -113,13 +128,13 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 					next_attempt_time, created_at, updated_at
 			   FROM pgqueue 
 			  WHERE kind = $1`,
-		successHandleTaskKind)
+		kind)
 
 	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
 	require.NoError(t, err)
 
 	for _, ti := range taskInfos {
-		assert.Equal(t, successHandleTaskKind, ti.Kind)
+		assert.Equal(t, kind, ti.Kind)
 		assert.NotNil(t, ti.Key)
 		assert.Equal(t, `{"sleep_ms": 100}`, ti.Payload)
 		assert.Equal(t, "succeeded", ti.Status)
@@ -132,15 +147,16 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 func TestQueue_FailHandleTask_PGX(t *testing.T) {
 	t.Parallel()
 
+	kind := failHandleTaskKind
 	ctx := context.Background()
 
 	pool := newTestPGXPool(ctx, t)
-	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, failHandleTaskKind)
+	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, kind)
 	require.NoError(t, err)
 
-	h := failHandler{}
+	h := newHandler(kind)
 	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(failHandleTaskKind, h,
+		pgqugo.NewTaskKind(kind, h,
 			pgqugo.WithMaxAttempts(3),
 			pgqugo.WithBatchSize(2),
 			pgqugo.WithWorkerCount(4),
@@ -152,7 +168,7 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 	q := pgqugo.New(adapter.NewPGX(pool), kinds)
 
 	task := pgqugo.Task{
-		Kind:    failHandleTaskKind,
+		Kind:    kind,
 		Payload: "{}",
 	}
 
@@ -172,13 +188,13 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 					next_attempt_time, created_at, updated_at
 			   FROM pgqueue 
 			  WHERE kind = $1`,
-		failHandleTaskKind)
+		kind)
 	require.NoError(t, err)
 	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
 	require.NoError(t, err)
 
 	for _, ti := range taskInfos {
-		assert.Equal(t, failHandleTaskKind, ti.Kind)
+		assert.Equal(t, kind, ti.Kind)
 		assert.NotNil(t, ti.Key)
 		assert.Equal(t, "{}", ti.Payload)
 		assert.Equal(t, "retry", ti.Status)
@@ -196,19 +212,77 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 					next_attempt_time, created_at, updated_at
 			   FROM pgqueue 
 			  WHERE kind = $1`,
-		failHandleTaskKind)
+		kind)
 	require.NoError(t, err)
 
 	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
 	require.NoError(t, err)
 
 	for _, ti := range taskInfos {
-		assert.Equal(t, failHandleTaskKind, ti.Kind)
+		assert.Equal(t, kind, ti.Kind)
 		assert.NotNil(t, ti.Key)
 		assert.Equal(t, "{}", ti.Payload)
 		assert.Equal(t, "failed", ti.Status)
 		assert.Equal(t, int16(0), ti.AttemptsLeft)
 		assert.Equal(t, int16(3), ti.AttemptsElapsed)
+		assert.Nil(t, ti.NextAttemptTime)
+	}
+}
+
+func TestQueue_AttemptTimeout_PGX(t *testing.T) {
+	t.Parallel()
+
+	kind := timeoutTaskKind
+	ctx := context.Background()
+
+	pool := newTestPGXPool(ctx, t)
+	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, kind)
+	require.NoError(t, err)
+
+	h := newHandler(kind)
+	kinds := pgqugo.TaskKinds{
+		pgqugo.NewTaskKind(timeoutTaskKind, h,
+			pgqugo.WithMaxAttempts(1),
+			pgqugo.WithBatchSize(1),
+			pgqugo.WithWorkerCount(1),
+			pgqugo.WithFetchPeriod(time.Millisecond*60),
+			pgqugo.WithAttemptTimeout(time.Millisecond*100),
+		),
+	}
+
+	q := pgqugo.New(adapter.NewPGX(pool), kinds)
+
+	task := pgqugo.Task{
+		Kind:    kind,
+		Payload: "{}",
+	}
+	key := strconv.Itoa(int(rand.Int64()))
+	task.Key = &key
+
+	err = q.CreateTask(ctx, task)
+	require.NoError(t, err)
+
+	q.Start()
+	time.Sleep(time.Millisecond * 500)
+	q.Stop()
+
+	rows, err := pool.Query(ctx,
+		`SELECT id, kind, key, payload, status, attempts_left, attempts_elapsed,
+					next_attempt_time, created_at, updated_at
+			   FROM pgqueue 
+			  WHERE kind = $1`,
+		kind)
+	require.NoError(t, err)
+	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	require.NoError(t, err)
+
+	for _, ti := range taskInfos {
+		assert.Equal(t, kind, ti.Kind)
+		assert.NotNil(t, ti.Key)
+		assert.Equal(t, "{}", ti.Payload)
+		assert.Equal(t, "failed", ti.Status)
+		assert.Equal(t, int16(0), ti.AttemptsLeft)
+		assert.Equal(t, int16(1), ti.AttemptsElapsed)
 		assert.Nil(t, ti.NextAttemptTime)
 	}
 }
