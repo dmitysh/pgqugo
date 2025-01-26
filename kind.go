@@ -6,7 +6,8 @@ import (
 )
 
 const (
-	year = time.Hour * 24 * 365
+	day  = time.Hour * 24
+	year = day * 365
 )
 
 type TaskHandler interface {
@@ -25,6 +26,14 @@ type taskKind struct {
 	batchSize        int
 	workerCount      int
 	attemptTimeout   time.Duration
+
+	cleanerCfg cleanerConfig
+}
+
+type cleanerConfig struct {
+	terminalTasksTTL time.Duration
+	period           time.Duration
+	limit            int
 }
 
 func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind {
@@ -38,6 +47,12 @@ func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind
 		batchSize:        10,
 		workerCount:      3,
 		attemptTimeout:   year,
+
+		cleanerCfg: cleanerConfig{
+			terminalTasksTTL: day,
+			period:           time.Minute * 10,
+			limit:            10_000,
+		},
 	}
 
 	for _, opt := range opts {
@@ -100,7 +115,41 @@ func WithWorkerCount(n int) TaskKindOption {
 }
 
 func WithAttemptTimeout(timeout time.Duration) TaskKindOption {
+	if timeout <= 0 {
+		panic("timeout must be positive")
+	}
+
 	return func(tk *taskKind) {
 		tk.attemptTimeout = timeout
+	}
+}
+
+func WithTerminalTasksTTL(ttl time.Duration) TaskKindOption {
+	if ttl <= 0 {
+		panic("terminal task ttl must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.cleanerCfg.terminalTasksTTL = ttl
+	}
+}
+
+func WithCleaningPeriod(period time.Duration) TaskKindOption {
+	if period <= 0 {
+		panic("cleaner period must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.cleanerCfg.period = period
+	}
+}
+
+func WithCleaningLimit(limit int) TaskKindOption {
+	if limit <= 0 {
+		panic("cleaner limit must be positive")
+	}
+
+	return func(tk *taskKind) {
+		tk.cleanerCfg.limit = limit
 	}
 }

@@ -26,3 +26,15 @@ type FullTaskInfo struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
+
+type GetWaitingTasksParams struct {
+	KindID           int16
+	BatchSize        int
+	AttemptsInterval time.Duration
+}
+
+type DeleteTerminalTasksParams struct {
+	KindID int16
+	Limit  int
+	After  time.Duration
+}

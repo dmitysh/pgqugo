@@ -101,6 +101,8 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 			pgqugo.WithWorkerCount(4),
 			pgqugo.WithFetchPeriod(time.Millisecond*350),
 			pgqugo.WithAttemptsInterval(time.Minute),
+			pgqugo.WithCleaningPeriod(time.Millisecond*1200),
+			pgqugo.WithTerminalTasksTTL(time.Millisecond),
 		),
 	}
 
@@ -133,6 +135,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
 	require.NoError(t, err)
 
+	require.Len(t, taskInfos, 3)
 	for _, ti := range taskInfos {
 		assert.Equal(t, kind, ti.Kind)
 		assert.NotNil(t, ti.Key)
@@ -142,6 +145,13 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 		assert.Equal(t, int16(1), ti.AttemptsElapsed)
 		assert.Nil(t, ti.NextAttemptTime)
 	}
+
+	time.Sleep(time.Millisecond * 250)
+
+	// Cleaner must clean
+	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	require.NoError(t, err)
+	require.Len(t, taskInfos, 0)
 }
 
 func TestQueue_FailHandleTask_PGX(t *testing.T) {

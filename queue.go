@@ -2,6 +2,7 @@ package pgqugo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -10,29 +11,36 @@ import (
 	"github.com/DmitySH/wopo"
 )
 
+const (
+	wpBufferSizeToNumOfWorkersFactor = 2
+	defaultDBTimeout                 = time.Second * 3
+)
+
+var (
+	ErrJobExecutionCancelled = errors.New("no need to execute job right now")
+)
+
 // TODO:
 // * log package to zap
 // * метрики ?
 // transactions
 // cleaner
 // jitter
+// db retries
 
-// TODO: benchmarks
+// TODO: check indexes, benchmarks
 
 type empty = struct{}
 
 type DB interface {
 	CreateTask(ctx context.Context, task FullTaskInfo) error
-	GetWaitingTasks(ctx context.Context, fetchParams FetchParams) ([]FullTaskInfo, error)
+	GetWaitingTasks(ctx context.Context, params GetWaitingTasksParams) ([]FullTaskInfo, error)
 	SoftFailTask(ctx context.Context, taskID int64) error
 	FailTask(ctx context.Context, taskID int64) error
 	SucceedTask(ctx context.Context, taskID int64) error
-}
-
-type FetchParams struct {
-	KindID           int16
-	BatchSize        int
-	AttemptsInterval time.Duration
+	DeleteTerminalTasks(ctx context.Context, params DeleteTerminalTasksParams) error
+	RegisterJob(ctx context.Context, job string) error
+	ExecuteJob(ctx context.Context, jobName string, jobPeriod time.Duration) error
 }
 
 type Queue struct {
@@ -77,17 +85,45 @@ func validateKinds(kinds TaskKinds) error {
 }
 
 func (q *Queue) Start() {
+	err := q.registerJobs()
+	if err != nil {
+		panic(err)
+	}
+
 	for _, kind := range q.kinds {
+		q.stopWg.Add(1)
 		go q.workLoop(kind)
 	}
 }
 
+func (q *Queue) registerJobs() error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultDBTimeout)
+	defer cancel()
+
+	for _, kind := range q.kinds {
+		err := q.db.RegisterJob(ctx, cleanerJob(kind.id))
+		if err != nil {
+			return fmt.Errorf("can't register cleaner job for kind %d: %w", kind.id, err)
+		}
+	}
+
+	return nil
+}
+
 func (q *Queue) workLoop(kind taskKind) {
-	q.stopWg.Add(1)
 	defer q.stopWg.Done()
+
+	ctx, cancelWorkLoop := context.WithCancel(context.Background())
+	defer cancelWorkLoop()
 
 	t := time.NewTicker(kind.fetchPeriod)
 	defer t.Stop()
+
+	c := cleaner{
+		tk: kind,
+		db: q.db,
+	}
+	go c.run(ctx)
 
 	e := executor{
 		tk: kind,
@@ -96,7 +132,7 @@ func (q *Queue) workLoop(kind taskKind) {
 	wp := wopo.NewPool(
 		e.execute,
 		wopo.WithWorkerCount[FullTaskInfo, empty](kind.workerCount),
-		wopo.WithTaskBufferSize[FullTaskInfo, empty](kind.workerCount/2),
+		wopo.WithTaskBufferSize[FullTaskInfo, empty](kind.workerCount*wpBufferSizeToNumOfWorkersFactor),
 		wopo.WithResultBufferSize[FullTaskInfo, empty](-1),
 	)
 	wp.Start()
@@ -116,13 +152,10 @@ func (q *Queue) workLoop(kind taskKind) {
 }
 
 func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[FullTaskInfo, empty]) error {
-	const defaultFetchTimeout = time.Second * 3
-	ctx := context.Background()
-
-	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), defaultFetchTimeout)
+	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), defaultDBTimeout)
 	defer fetchCancel()
 
-	tasks, err := q.db.GetWaitingTasks(fetchCtx, FetchParams{
+	tasks, err := q.db.GetWaitingTasks(fetchCtx, GetWaitingTasksParams{
 		KindID:           kind.id,
 		BatchSize:        kind.batchSize,
 		AttemptsInterval: kind.attemptsInterval,
@@ -132,7 +165,7 @@ func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[FullTaskInfo, emp
 	}
 
 	for i := 0; i < len(tasks); i++ {
-		wp.PushTask(ctx, tasks[i])
+		wp.PushTask(context.Background(), tasks[i])
 	}
 
 	return nil

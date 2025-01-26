@@ -1,5 +1,4 @@
 -- +goose Up
--- +goose StatementBegin
 CREATE TYPE pgqueue_status AS ENUM (
     'new',
     'in_progress',
@@ -7,9 +6,7 @@ CREATE TYPE pgqueue_status AS ENUM (
     'failed',
     'succeeded'
     );
--- +goose StatementEnd
 
--- +goose StatementBegin
 CREATE TABLE pgqueue
 (
     id                bigserial primary key,
@@ -23,23 +20,17 @@ CREATE TABLE pgqueue
     created_at        timestamp with time zone default now() not null,
     updated_at        timestamp with time zone default now() not null
 ) WITH (fillfactor = 75);
--- +goose StatementEnd
 
--- +goose StatementBegin
 CREATE UNIQUE INDEX pgqueue_key_kind_unique_idx ON pgqueue (key, kind)
     WHERE key IS NOT NULL;
--- +goose StatementEnd
 
--- +goose StatementBegin
 CREATE INDEX pgqueue_waiting_tasks_idx ON pgqueue (kind, next_attempt_time)
-    WHERE status in ('new', 'retry');
--- +goose StatementEnd
+    WHERE status in ('new', 'in_progress', 'retry');
+
+CREATE INDEX pgqueue_clean_tasks_idx ON pgqueue (kind, updated_at)
+    WHERE status in ('failed', 'succeeded');
 
 -- +goose Down
--- +goose StatementBegin
 DROP TABLE pgqueue;
--- +goose StatementEnd
 
--- +goose StatementBegin
 DROP TYPE pgqueue_status;
--- +goose StatementEnd
