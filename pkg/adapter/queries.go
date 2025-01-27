@@ -1,14 +1,15 @@
 package adapter
 
-const createTaskQuery = `INSERT INTO pgqueue (kind, key, payload, attempts_left) 
-		      				  VALUES ($1, $2, $3, $4)
+const createTaskQuery = `INSERT INTO pgqueue (kind, key, payload, attempts_left, next_attempt_time) 
+		      				  VALUES ($1, $2, $3, $4, now())
 		      			   RETURNING id`
 
 const getWaitingTasksQuery = `WITH selected AS (
 							SELECT id
 							  FROM pgqueue
 							 WHERE kind = $1
-							   AND (status = 'new' OR (status IN ('retry', 'in_progress') AND next_attempt_time < now()))
+							   AND status IN ('new', 'in_progress', 'retry')
+						       AND next_attempt_time < now()
 						  ORDER BY created_at
 							 LIMIT $2
                  FOR NO KEY UPDATE SKIP LOCKED)
