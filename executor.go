@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+
+	"github.com/DmitySH/pgqugo/internal/entity"
 )
 
 type executor struct {
@@ -12,7 +14,7 @@ type executor struct {
 	db DB
 }
 
-func (e executor) execute(ctx context.Context, task FullTaskInfo) (empty, error) {
+func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty, error) {
 	pt := ProcessingTask{
 		Task: Task{
 			Kind:    task.Kind,

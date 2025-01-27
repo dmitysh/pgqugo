@@ -2,22 +2,18 @@ package pgqugo
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"github.com/DmitySH/pgqugo/internal/entity"
 	"github.com/DmitySH/wopo"
 )
 
 const (
 	wpBufferSizeToNumOfWorkersFactor = 2
 	defaultDBTimeout                 = time.Second * 3
-)
-
-var (
-	ErrJobExecutionCancelled = errors.New("no need to execute job right now")
 )
 
 // TODO:
@@ -33,12 +29,12 @@ var (
 type empty = struct{}
 
 type DB interface {
-	CreateTask(ctx context.Context, task FullTaskInfo) error
-	GetWaitingTasks(ctx context.Context, params GetWaitingTasksParams) ([]FullTaskInfo, error)
+	CreateTask(ctx context.Context, task entity.FullTaskInfo) error
+	GetWaitingTasks(ctx context.Context, params entity.GetWaitingTasksParams) ([]entity.FullTaskInfo, error)
 	SoftFailTask(ctx context.Context, taskID int64) error
 	FailTask(ctx context.Context, taskID int64) error
 	SucceedTask(ctx context.Context, taskID int64) error
-	DeleteTerminalTasks(ctx context.Context, params DeleteTerminalTasksParams) error
+	DeleteTerminalTasks(ctx context.Context, params entity.DeleteTerminalTasksParams) error
 	RegisterJob(ctx context.Context, job string) error
 	ExecuteJob(ctx context.Context, jobName string, jobPeriod time.Duration) error
 }
@@ -131,9 +127,9 @@ func (q *Queue) workLoop(kind taskKind) {
 	}
 	wp := wopo.NewPool(
 		e.execute,
-		wopo.WithWorkerCount[FullTaskInfo, empty](kind.workerCount),
-		wopo.WithTaskBufferSize[FullTaskInfo, empty](kind.workerCount*wpBufferSizeToNumOfWorkersFactor),
-		wopo.WithResultBufferSize[FullTaskInfo, empty](-1),
+		wopo.WithWorkerCount[entity.FullTaskInfo, empty](kind.workerCount),
+		wopo.WithTaskBufferSize[entity.FullTaskInfo, empty](kind.workerCount*wpBufferSizeToNumOfWorkersFactor),
+		wopo.WithResultBufferSize[entity.FullTaskInfo, empty](-1),
 	)
 	wp.Start()
 
@@ -151,11 +147,11 @@ func (q *Queue) workLoop(kind taskKind) {
 	}
 }
 
-func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[FullTaskInfo, empty]) error {
+func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[entity.FullTaskInfo, empty]) error {
 	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), defaultDBTimeout)
 	defer fetchCancel()
 
-	tasks, err := q.db.GetWaitingTasks(fetchCtx, GetWaitingTasksParams{
+	tasks, err := q.db.GetWaitingTasks(fetchCtx, entity.GetWaitingTasksParams{
 		KindID:           kind.id,
 		BatchSize:        kind.batchSize,
 		AttemptsInterval: kind.attemptsInterval,
@@ -182,7 +178,7 @@ func (q *Queue) CreateTask(ctx context.Context, task Task) error {
 		return fmt.Errorf("kind %d does not exist", task.Kind)
 	}
 
-	ti := FullTaskInfo{
+	ti := entity.FullTaskInfo{
 		Kind:         task.Kind,
 		Key:          task.Key,
 		Payload:      task.Payload,
@@ -190,4 +186,16 @@ func (q *Queue) CreateTask(ctx context.Context, task Task) error {
 	}
 
 	return q.db.CreateTask(ctx, ti)
+}
+
+type Task struct {
+	Kind    int16
+	Key     *string
+	Payload string
+}
+
+type ProcessingTask struct {
+	Task
+	AttemptsLeft    int16
+	AttemptsElapsed int16
 }

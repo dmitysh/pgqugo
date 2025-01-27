@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/DmitySH/pgqugo/internal/entity"
+	"github.com/DmitySH/pgqugo/internal/inerrors"
 )
 
 type cleaner struct {
@@ -38,14 +41,14 @@ func (c cleaner) cleanTerminalTasks(ctx context.Context) error {
 	defer cancel()
 
 	err := c.db.ExecuteJob(ctx, cleanerJob(c.tk.id), c.tk.cleanerCfg.period)
-	if errors.Is(err, ErrJobExecutionCancelled) {
+	if errors.Is(err, inerrors.ErrJobExecutionCancelled) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("can't execute job: %w", err)
 	}
 
-	err = c.db.DeleteTerminalTasks(ctx, DeleteTerminalTasksParams{
+	err = c.db.DeleteTerminalTasks(ctx, entity.DeleteTerminalTasksParams{
 		KindID: c.tk.id,
 		Limit:  c.tk.cleanerCfg.limit,
 		After:  c.tk.cleanerCfg.terminalTasksTTL,

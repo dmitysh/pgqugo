@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"github.com/DmitySH/pgqugo"
+	"github.com/DmitySH/pgqugo/internal/entity"
 	"github.com/DmitySH/pgqugo/pkg/adapter"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TODO: реорганизовать тесты
 
 var (
 	errFailed = errors.New("task failed")
@@ -106,7 +109,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 		),
 	}
 
-	q := pgqugo.New(adapter.NewPGX(pool), kinds)
+	q := pgqugo.New(adapter.NewPGXv5(pool), kinds)
 
 	task := pgqugo.Task{
 		Kind:    kind,
@@ -132,7 +135,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 			  WHERE kind = $1`,
 		kind)
 
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
 	require.NoError(t, err)
 
 	require.Len(t, taskInfos, 3)
@@ -149,7 +152,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 	time.Sleep(time.Millisecond * 250)
 
 	// Cleaner must clean
-	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
 	require.NoError(t, err)
 	require.Len(t, taskInfos, 0)
 }
@@ -175,7 +178,7 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 		),
 	}
 
-	q := pgqugo.New(adapter.NewPGX(pool), kinds)
+	q := pgqugo.New(adapter.NewPGXv5(pool), kinds)
 
 	task := pgqugo.Task{
 		Kind:    kind,
@@ -200,7 +203,7 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 			  WHERE kind = $1`,
 		kind)
 	require.NoError(t, err)
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
 	require.NoError(t, err)
 
 	for _, ti := range taskInfos {
@@ -225,7 +228,7 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 		kind)
 	require.NoError(t, err)
 
-	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
 	require.NoError(t, err)
 
 	for _, ti := range taskInfos {
@@ -260,7 +263,7 @@ func TestQueue_AttemptTimeout_PGX(t *testing.T) {
 		),
 	}
 
-	q := pgqugo.New(adapter.NewPGX(pool), kinds)
+	q := pgqugo.New(adapter.NewPGXv5(pool), kinds)
 
 	task := pgqugo.Task{
 		Kind:    kind,
@@ -283,7 +286,7 @@ func TestQueue_AttemptTimeout_PGX(t *testing.T) {
 			  WHERE kind = $1`,
 		kind)
 	require.NoError(t, err)
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pgqugo.FullTaskInfo])
+	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
 	require.NoError(t, err)
 
 	for _, ti := range taskInfos {
