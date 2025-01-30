@@ -20,11 +20,9 @@ const (
 // * log package to zap
 // * метрики ?
 // transactions
-// cleaner
 // jitter
-// db retries
 
-// TODO: check indexes, benchmarks
+// TODO: benchmarks
 
 type empty = struct{}
 

@@ -1,9 +1,7 @@
-github.com/DmitySH/wopo v0.0.0-20250119174851-1d03c6e6db42 h1:NhbHJ4DNsmnBAaPAzXi+gv6F+4YqNngqnJqyna3sIkA=
-github.com/DmitySH/wopo v0.0.0-20250119174851-1d03c6e6db42/go.mod h1:p7vSve88W2TL3sTmbLSgkxlFANH0zrPCTNlqanYHeXM=
-github.com/DmitySH/wopo v0.1.0 h1:KI5nirk1Ni9SJBxGxu046XlHtzPmtb4twQHaqPUaIVQ=
-github.com/DmitySH/wopo v0.1.0/go.mod h1:p7vSve88W2TL3sTmbLSgkxlFANH0zrPCTNlqanYHeXM=
 github.com/DmitySH/wopo v0.1.1 h1:n5z0v5HAX0igrpvqOxcPLcd6zrOv6lqyJMPKTsEDHnY=
 github.com/DmitySH/wopo v0.1.1/go.mod h1:p7vSve88W2TL3sTmbLSgkxlFANH0zrPCTNlqanYHeXM=
+github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
+github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
