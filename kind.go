@@ -2,6 +2,7 @@ package pgqugo
 
 import (
 	"context"
+	"math/rand/v2"
 	"time"
 )
 
@@ -20,7 +21,7 @@ type taskKind struct {
 	id      int16
 	handler TaskHandler
 
-	fetchPeriod      time.Duration
+	fetchPeriod      func() time.Duration
 	attemptsInterval time.Duration
 	maxAttempts      int16
 	batchSize        int
@@ -42,10 +43,10 @@ func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind
 		handler: handler,
 
 		maxAttempts:      3,
-		fetchPeriod:      time.Millisecond * 300,
+		fetchPeriod:      func() time.Duration { return calculateDeviationPeriod(time.Second, 0.5) },
 		attemptsInterval: time.Second * 10,
 		batchSize:        10,
-		workerCount:      3,
+		workerCount:      1,
 		attemptTimeout:   year,
 
 		cleanerCfg: cleanerConfig{
@@ -84,14 +85,24 @@ func WithBatchSize(n int) TaskKindOption {
 	}
 }
 
-func WithFetchPeriod(period time.Duration) TaskKindOption {
-	if period <= 0 {
-		panic("fetch period must be positive")
+func WithFetchPeriod(mean time.Duration, deviation float64) TaskKindOption {
+	if mean <= 0 {
+		panic("fetch period mean must be positive")
+	}
+
+	if deviation < 0 || deviation > 1 {
+		panic("deviation must be in [0;1]")
 	}
 
 	return func(tk *taskKind) {
-		tk.fetchPeriod = period
+		tk.fetchPeriod = func() time.Duration {
+			return calculateDeviationPeriod(mean, deviation)
+		}
 	}
+}
+
+func calculateDeviationPeriod(mean time.Duration, deviation float64) time.Duration {
+	return time.Duration(float64(mean) + deviation*(rand.Float64()*float64(2)-float64(1))*float64(mean))
 }
 
 func WithAttemptsInterval(interval time.Duration) TaskKindOption {

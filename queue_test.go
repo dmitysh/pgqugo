@@ -18,8 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO: реорганизовать тесты
-
 var (
 	errFailed = errors.New("task failed")
 )
@@ -102,7 +100,7 @@ func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
 			pgqugo.WithMaxAttempts(3),
 			pgqugo.WithBatchSize(2),
 			pgqugo.WithWorkerCount(4),
-			pgqugo.WithFetchPeriod(time.Millisecond*350),
+			pgqugo.WithFetchPeriod(time.Millisecond*350, 0),
 			pgqugo.WithAttemptsInterval(time.Minute),
 			pgqugo.WithCleaningPeriod(time.Millisecond*1200),
 			pgqugo.WithTerminalTasksTTL(time.Millisecond),
@@ -173,7 +171,7 @@ func TestQueue_FailHandleTask_PGX(t *testing.T) {
 			pgqugo.WithMaxAttempts(3),
 			pgqugo.WithBatchSize(2),
 			pgqugo.WithWorkerCount(4),
-			pgqugo.WithFetchPeriod(time.Millisecond*60),
+			pgqugo.WithFetchPeriod(time.Millisecond*60, 0),
 			pgqugo.WithAttemptsInterval(time.Millisecond*270),
 		),
 	}
@@ -258,7 +256,7 @@ func TestQueue_AttemptTimeout_PGX(t *testing.T) {
 			pgqugo.WithMaxAttempts(1),
 			pgqugo.WithBatchSize(1),
 			pgqugo.WithWorkerCount(1),
-			pgqugo.WithFetchPeriod(time.Millisecond*60),
+			pgqugo.WithFetchPeriod(time.Millisecond*60, 0),
 			pgqugo.WithAttemptTimeout(time.Millisecond*100),
 		),
 	}

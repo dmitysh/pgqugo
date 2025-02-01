@@ -17,17 +17,17 @@ const (
 )
 
 // TODO:
-// * log package to zap
-// * метрики ?
+// logger
+// metrics
 // transactions
-// jitter
 
-// TODO: benchmarks
+// TODO: benchmarks, refactor tests (suites)
 
 type empty = struct{}
 
 type DB interface {
 	CreateTask(ctx context.Context, task entity.FullTaskInfo) error
+	CreateTaskTx(ctx context.Context, task entity.FullTaskInfo, creator entity.TxTaskCreator) error
 	GetWaitingTasks(ctx context.Context, params entity.GetWaitingTasksParams) ([]entity.FullTaskInfo, error)
 	SoftFailTask(ctx context.Context, taskID int64) error
 	FailTask(ctx context.Context, taskID int64) error
@@ -110,7 +110,7 @@ func (q *Queue) workLoop(kind taskKind) {
 	ctx, cancelWorkLoop := context.WithCancel(context.Background())
 	defer cancelWorkLoop()
 
-	t := time.NewTicker(kind.fetchPeriod)
+	t := time.NewTimer(kind.fetchPeriod())
 	defer t.Stop()
 
 	c := cleaner{
@@ -141,6 +141,7 @@ func (q *Queue) workLoop(kind taskKind) {
 			if err != nil {
 				log.Println(err)
 			}
+			t.Reset(kind.fetchPeriod())
 		}
 	}
 }
