@@ -8,8 +8,15 @@ import (
 	"github.com/DmitySH/pgqugo/internal/entity"
 	"github.com/DmitySH/pgqugo/internal/inerrors"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type executor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
+type txKey struct{}
 
 type PGXv5 struct {
 	pool *pgxpool.Pool
@@ -22,7 +29,15 @@ func NewPGXv5(pool *pgxpool.Pool) *PGXv5 {
 }
 
 func (p *PGXv5) CreateTask(ctx context.Context, task entity.FullTaskInfo) error {
-	_, err := p.pool.Exec(ctx, createTaskQuery, task.Kind, task.Key, task.Payload, task.AttemptsLeft)
+	var ex executor
+
+	if tx := extractPGXv5Tx(ctx); tx != nil {
+		ex = tx
+	} else {
+		ex = p.pool
+	}
+
+	_, err := ex.Exec(ctx, createTaskQuery, task.Kind, task.Key, task.Payload, task.AttemptsLeft)
 	if err != nil {
 		return err
 	}
@@ -113,6 +128,18 @@ func (p *PGXv5) ExecuteJob(ctx context.Context, jobName string, jobPeriod time.D
 	}
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func InjectPGXv5Tx(ctx context.Context, tx pgx.Tx) context.Context {
+	return context.WithValue(ctx, txKey{}, tx)
+}
+
+func extractPGXv5Tx(ctx context.Context) pgx.Tx {
+	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+		return tx
 	}
 
 	return nil

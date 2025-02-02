@@ -27,7 +27,6 @@ type empty = struct{}
 
 type DB interface {
 	CreateTask(ctx context.Context, task entity.FullTaskInfo) error
-	CreateTaskTx(ctx context.Context, task entity.FullTaskInfo, creator entity.TxTaskCreator) error
 	GetWaitingTasks(ctx context.Context, params entity.GetWaitingTasksParams) ([]entity.FullTaskInfo, error)
 	SoftFailTask(ctx context.Context, taskID int64) error
 	FailTask(ctx context.Context, taskID int64) error
