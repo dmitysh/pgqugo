@@ -2,298 +2,370 @@ package pgqugo_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"math/rand/v2"
-	"strconv"
+	"fmt"
+	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DmitySH/pgqugo"
 	"github.com/DmitySH/pgqugo/internal/entity"
 	"github.com/DmitySH/pgqugo/pkg/adapter"
-	"github.com/jackc/pgx/v5"
+	"github.com/DmitySH/pgqugo/pkg/delayer"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"go.uber.org/goleak"
+)
+
+const (
+	dbTimeout               = time.Second * 2
+	eventuallyPollingPeriod = time.Millisecond * 100
+	eventuallyTimeout       = eventuallyPollingPeriod * 20
+)
+
+const (
+	testTaskKind = int16(1)
 )
 
 var (
-	errFailed = errors.New("task failed")
+	testErr = errors.New("some error")
 )
 
-const (
-	testPostgresDSN = "postgresql://postgres:postgres@localhost:5490/postgres"
-)
-
-const (
-	successHandleTaskKind = int16(iota) + 1
-	failHandleTaskKind
-	timeoutTaskKind
-)
-
-type handler struct {
-	kind int16
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 
-func newHandler(kind int16) handler {
-	return handler{kind: kind}
+func TestSuiteQueuePgxV5(t *testing.T) {
+	t.Parallel()
+
+	s := newQueuePgxV5Suite()
+	suite.Run(t, s)
 }
 
-func (h handler) HandleTask(ctx context.Context, task pgqugo.ProcessingTask) error {
-	switch h.kind {
-	case successHandleTaskKind:
-		type payload struct {
-			SleepMS int `json:"sleep_ms"`
-		}
-		var p payload
+type pgxV5Suite struct {
+	suite.Suite
 
-		err := json.Unmarshal([]byte(task.Payload), &p)
-		if err != nil {
-			panic(err)
-		}
-
-		time.Sleep(time.Millisecond * time.Duration(p.SleepMS))
-		return nil
-	case failHandleTaskKind:
-		return errFailed
-	case timeoutTaskKind:
-		select {
-		case <-time.After(time.Second):
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	default:
-		panic("unknown kind")
-	}
+	pool *pgxpool.Pool
 }
 
-func newTestPGXPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
-	t.Helper()
+func newQueuePgxV5Suite() *pgxV5Suite {
+	return &pgxV5Suite{}
+}
 
-	p, err := pgxpool.New(ctx, testPostgresDSN)
-	require.NoError(t, err)
+func (s *pgxV5Suite) SetupSuite() {
+	s.pool = s.newTestPgPool()
+}
+
+func (s *pgxV5Suite) newTestPgPool() *pgxpool.Pool {
+	ctx, cancel := s.newContextWithDBTimeout()
+	defer cancel()
+
+	p, err := pgxpool.New(ctx, os.Getenv("TEST_PG_DSN"))
+	s.Require().NoError(err)
 
 	err = p.Ping(ctx)
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	defer cancel()
+	s.Require().NoError(err)
 
 	return p
 }
 
-func TestQueue_SuccessHandleTask_PGX(t *testing.T) {
-	t.Parallel()
-
-	kind := successHandleTaskKind
-	ctx := context.Background()
-
-	pool := newTestPGXPool(ctx, t)
-	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, kind)
-	require.NoError(t, err)
-
-	h := newHandler(kind)
-	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(kind, h,
-			pgqugo.WithMaxAttempts(3),
-			pgqugo.WithBatchSize(2),
-			pgqugo.WithWorkerCount(4),
-			pgqugo.WithFetchPeriod(time.Millisecond*350, 0),
-			pgqugo.WithAttemptsInterval(time.Minute),
-			pgqugo.WithCleaningPeriod(time.Millisecond*1200),
-			pgqugo.WithTerminalTasksTTL(time.Millisecond),
-		),
-	}
-
-	q := pgqugo.New(adapter.NewPGXv5(pool), kinds)
-
-	task := pgqugo.Task{
-		Kind:    kind,
-		Payload: `{"sleep_ms": 100}`,
-	}
-
-	for i := 0; i < 3; i++ {
-		key := strconv.Itoa(int(rand.Int64()))
-		task.Key = &key
-
-		err = q.CreateTask(ctx, task)
-		require.NoError(t, err)
-	}
-
-	q.Start()
-	time.Sleep(time.Second)
-	q.Stop()
-
-	rows, err := pool.Query(ctx,
-		`SELECT id, kind, key, payload, status, attempts_left, attempts_elapsed,
-					next_attempt_time, created_at, updated_at
-			   FROM pgqueue 
-			  WHERE kind = $1`,
-		kind)
-
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
-	require.NoError(t, err)
-
-	require.Len(t, taskInfos, 3)
-	for _, ti := range taskInfos {
-		assert.Equal(t, kind, ti.Kind)
-		assert.NotNil(t, ti.Key)
-		assert.Equal(t, `{"sleep_ms": 100}`, ti.Payload)
-		assert.Equal(t, "succeeded", ti.Status)
-		assert.Equal(t, int16(2), ti.AttemptsLeft)
-		assert.Equal(t, int16(1), ti.AttemptsElapsed)
-		assert.Nil(t, ti.NextAttemptTime)
-	}
-
-	time.Sleep(time.Millisecond * 250)
-
-	// Cleaner must clean
-	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
-	require.NoError(t, err)
-	require.Len(t, taskInfos, 0)
+func (s *pgxV5Suite) newContextWithDBTimeout() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), dbTimeout)
 }
 
-func TestQueue_FailHandleTask_PGX(t *testing.T) {
-	t.Parallel()
-
-	kind := failHandleTaskKind
-	ctx := context.Background()
-
-	pool := newTestPGXPool(ctx, t)
-	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, kind)
-	require.NoError(t, err)
-
-	h := newHandler(kind)
-	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(kind, h,
-			pgqugo.WithMaxAttempts(3),
-			pgqugo.WithBatchSize(2),
-			pgqugo.WithWorkerCount(4),
-			pgqugo.WithFetchPeriod(time.Millisecond*60, 0),
-			pgqugo.WithAttemptsInterval(time.Millisecond*270),
-		),
-	}
-
-	q := pgqugo.New(adapter.NewPGXv5(pool), kinds)
-
-	task := pgqugo.Task{
-		Kind:    kind,
-		Payload: "{}",
-	}
-
-	for i := 0; i < 3; i++ {
-		key := strconv.Itoa(int(rand.Int64()))
-		task.Key = &key
-
-		err = q.CreateTask(ctx, task)
-		require.NoError(t, err)
-	}
-	q.Start()
-	// check retrying
-
-	time.Sleep(time.Millisecond * 500)
-	rows, err := pool.Query(ctx,
-		`SELECT id, kind, key, payload, status, attempts_left, attempts_elapsed,
-					next_attempt_time, created_at, updated_at
-			   FROM pgqueue 
-			  WHERE kind = $1`,
-		kind)
-	require.NoError(t, err)
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
-	require.NoError(t, err)
-
-	for _, ti := range taskInfos {
-		assert.Equal(t, kind, ti.Kind)
-		assert.NotNil(t, ti.Key)
-		assert.Equal(t, "{}", ti.Payload)
-		assert.Equal(t, "retry", ti.Status)
-		assert.Equal(t, int16(1), ti.AttemptsLeft)
-		assert.Equal(t, int16(2), ti.AttemptsElapsed)
-		assert.NotNil(t, ti.NextAttemptTime)
-	}
-
-	time.Sleep(time.Millisecond * 500)
-	q.Stop()
-
-	// check final failed status
-	rows, err = pool.Query(ctx,
-		`SELECT id, kind, key, payload, status, attempts_left, attempts_elapsed,
-					next_attempt_time, created_at, updated_at
-			   FROM pgqueue 
-			  WHERE kind = $1`,
-		kind)
-	require.NoError(t, err)
-
-	taskInfos, err = pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
-	require.NoError(t, err)
-
-	for _, ti := range taskInfos {
-		assert.Equal(t, kind, ti.Kind)
-		assert.NotNil(t, ti.Key)
-		assert.Equal(t, "{}", ti.Payload)
-		assert.Equal(t, "failed", ti.Status)
-		assert.Equal(t, int16(0), ti.AttemptsLeft)
-		assert.Equal(t, int16(3), ti.AttemptsElapsed)
-		assert.Nil(t, ti.NextAttemptTime)
-	}
+func (s *pgxV5Suite) TearDownSuite() {
+	s.pool.Close()
 }
 
-func TestQueue_AttemptTimeout_PGX(t *testing.T) {
-	t.Parallel()
+func (s *pgxV5Suite) SetupTest() {
+	s.clearQueueTable()
+}
 
-	kind := timeoutTaskKind
+func (s *pgxV5Suite) clearQueueTable() {
+	ctx, cancel := s.newContextWithDBTimeout()
+	defer cancel()
+
+	_, err := s.pool.Exec(ctx, "TRUNCATE TABLE pgqueue")
+	s.Require().NoError(err)
+}
+
+func (s *pgxV5Suite) TestCreateTaskSuccess() {
 	ctx := context.Background()
 
-	pool := newTestPGXPool(ctx, t)
-	_, err := pool.Exec(ctx, `DELETE FROM pgqueue WHERE kind = $1`, kind)
-	require.NoError(t, err)
+	h := newSuccessHandler()
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				h,
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0),
+				pgqugo.WithMaxAttempts(3),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+			),
+		},
+	)
+	q.Start()
+	defer q.Stop()
 
-	h := newHandler(kind)
-	kinds := pgqugo.TaskKinds{
-		pgqugo.NewTaskKind(timeoutTaskKind, h,
-			pgqugo.WithMaxAttempts(1),
-			pgqugo.WithBatchSize(1),
-			pgqugo.WithWorkerCount(1),
-			pgqugo.WithFetchPeriod(time.Millisecond*60, 0),
-			pgqugo.WithAttemptTimeout(time.Millisecond*100),
-		),
+	const taskCount = 3
+	for i := 0; i < taskCount; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		task := pgqugo.Task{
+			Kind:    1,
+			Key:     &key,
+			Payload: "{}",
+		}
+		s.Require().NoError(q.CreateTask(ctx, task))
 	}
 
-	q := pgqugo.New(adapter.NewPGXv5(pool), kinds)
+	s.Require().Eventually(func() bool {
+		return s.getTasksByStatus(testTaskKind, pgqugo.TaskStatusSuccess) == 3
+	}, eventuallyTimeout, eventuallyPollingPeriod)
 
+	for i := 0; i < taskCount; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		taskInfo := s.getTaskByKey(testTaskKind, key)
+
+		s.Require().Equal(testTaskKind, taskInfo.Kind)
+		s.Require().Equal(key, *taskInfo.Key)
+		s.Require().WithinDuration(time.Now(), taskInfo.CreatedAt, eventuallyTimeout)
+		s.Require().WithinDuration(time.Now(), taskInfo.UpdatedAt, eventuallyTimeout)
+		s.Require().Nil(taskInfo.NextAttemptTime)
+		s.Require().Equal(pgqugo.TaskStatusSuccess, taskInfo.Status)
+		s.Require().Equal(int16(2), taskInfo.AttemptsLeft)
+		s.Require().Equal(int16(1), taskInfo.AttemptsElapsed)
+		s.Require().Equal("{}", taskInfo.Payload)
+	}
+
+	s.Require().Equal(3, h.callsCount())
+}
+
+func (s *pgxV5Suite) TestCreateTaskUnknownKind() {
+	ctx := context.Background()
+
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				nil,
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+			),
+		},
+	)
+	q.Start()
+	defer q.Stop()
+
+	key := fmt.Sprintf("key_%d", 0)
 	task := pgqugo.Task{
-		Kind:    kind,
+		Kind:    testTaskKind + 1,
+		Key:     &key,
 		Payload: "{}",
 	}
-	key := strconv.Itoa(int(rand.Int64()))
-	task.Key = &key
+	s.Require().ErrorContains(q.CreateTask(ctx, task), "kind 2 does not exist")
+}
 
-	err = q.CreateTask(ctx, task)
-	require.NoError(t, err)
+func (s *pgxV5Suite) TestHandlerError() {
+	ctx := context.Background()
 
+	h := newErrorHandler()
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				h,
+				pgqugo.WithMaxAttempts(3),
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0.5),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+			),
+		},
+	)
 	q.Start()
-	time.Sleep(time.Millisecond * 500)
-	q.Stop()
+	defer q.Stop()
 
-	rows, err := pool.Query(ctx,
-		`SELECT id, kind, key, payload, status, attempts_left, attempts_elapsed,
-					next_attempt_time, created_at, updated_at
-			   FROM pgqueue 
-			  WHERE kind = $1`,
-		kind)
-	require.NoError(t, err)
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
-	require.NoError(t, err)
-
-	for _, ti := range taskInfos {
-		assert.Equal(t, kind, ti.Kind)
-		assert.NotNil(t, ti.Key)
-		assert.Equal(t, "{}", ti.Payload)
-		assert.Equal(t, "failed", ti.Status)
-		assert.Equal(t, int16(0), ti.AttemptsLeft)
-		assert.Equal(t, int16(1), ti.AttemptsElapsed)
-		assert.Nil(t, ti.NextAttemptTime)
+	const taskCount = 3
+	for i := 0; i < taskCount; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		task := pgqugo.Task{
+			Kind:    testTaskKind,
+			Key:     &key,
+			Payload: "{}",
+		}
+		s.Require().NoError(q.CreateTask(ctx, task))
 	}
+
+	s.Require().Eventually(func() bool {
+		return s.getTasksByStatus(testTaskKind, pgqugo.TaskStatusFailed) == 3
+	}, eventuallyTimeout, eventuallyPollingPeriod)
+
+	for i := 0; i < taskCount; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		taskInfo := s.getTaskByKey(testTaskKind, key)
+
+		s.Require().Equal(testTaskKind, taskInfo.Kind)
+		s.Require().Equal(key, *taskInfo.Key)
+		s.Require().WithinDuration(time.Now(), taskInfo.CreatedAt, eventuallyTimeout)
+		s.Require().WithinDuration(time.Now(), taskInfo.UpdatedAt, eventuallyTimeout)
+		s.Require().Nil(taskInfo.NextAttemptTime)
+		s.Require().Equal(pgqugo.TaskStatusFailed, taskInfo.Status)
+		s.Require().Equal(int16(0), taskInfo.AttemptsLeft)
+		s.Require().Equal(int16(3), taskInfo.AttemptsElapsed)
+		s.Require().Equal("{}", taskInfo.Payload)
+	}
+
+	s.Require().Equal(9, h.callsCount())
+}
+
+func (s *pgxV5Suite) TestHandlerPanic() {
+	ctx := context.Background()
+
+	h := newPanicHandler()
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				h,
+				pgqugo.WithMaxAttempts(3),
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0.5),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+			),
+		},
+	)
+	q.Start()
+	defer q.Stop()
+
+	const taskCount = 3
+	for i := 0; i < taskCount; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		task := pgqugo.Task{
+			Kind:    testTaskKind,
+			Key:     &key,
+			Payload: "{}",
+		}
+		s.Require().NoError(q.CreateTask(ctx, task))
+	}
+
+	s.Require().Eventually(func() bool {
+		return s.getTasksByStatus(testTaskKind, pgqugo.TaskStatusFailed) == 3
+	}, eventuallyTimeout, eventuallyPollingPeriod)
+
+	for i := 0; i < taskCount; i++ {
+		key := fmt.Sprintf("key_%d", i)
+		taskInfo := s.getTaskByKey(testTaskKind, key)
+
+		s.Require().Equal(testTaskKind, taskInfo.Kind)
+		s.Require().Equal(key, *taskInfo.Key)
+		s.Require().WithinDuration(time.Now(), taskInfo.CreatedAt, eventuallyTimeout)
+		s.Require().WithinDuration(time.Now(), taskInfo.UpdatedAt, eventuallyTimeout)
+		s.Require().Nil(taskInfo.NextAttemptTime)
+		s.Require().Equal(pgqugo.TaskStatusFailed, taskInfo.Status)
+		s.Require().Equal(int16(0), taskInfo.AttemptsLeft)
+		s.Require().Equal(int16(3), taskInfo.AttemptsElapsed)
+		s.Require().Equal("{}", taskInfo.Payload)
+	}
+
+	s.Require().Equal(9, h.callsCount())
+}
+
+func (s *pgxV5Suite) getTasksByStatus(kind int16, status pgqugo.TaskStatus) int {
+	ctx, cancel := s.newContextWithDBTimeout()
+	defer cancel()
+
+	const q = `SELECT count(1) FROM pgqueue 
+                WHERE kind = $1
+                  AND status = $2`
+
+	var n int
+	s.Require().NoError(s.pool.QueryRow(ctx, q, kind, status).Scan(&n))
+
+	return n
+}
+
+func (s *pgxV5Suite) getTaskByKey(kind int16, key string) entity.FullTaskInfo {
+	ctx, cancel := s.newContextWithDBTimeout()
+	defer cancel()
+
+	const q = `SELECT id,               
+					  kind,             
+					  key,              
+					  payload,          
+					  status,           
+					  attempts_left,    
+					  attempts_elapsed, 
+					  next_attempt_time,
+					  created_at,       
+					  updated_at        
+				 FROM pgqueue
+			    WHERE kind = $1
+			      AND key = $2`
+
+	var task entity.FullTaskInfo
+	s.Require().NoError(s.pool.QueryRow(ctx, q, kind, key).Scan(&task.ID, &task.Kind, &task.Key, &task.Payload,
+		&task.Status, &task.AttemptsLeft, &task.AttemptsElapsed, &task.NextAttemptTime, &task.CreatedAt, &task.UpdatedAt))
+
+	return task
+}
+
+func (s *pgxV5Suite) getTotalTasks(kind int16) int {
+	ctx, cancel := s.newContextWithDBTimeout()
+	defer cancel()
+
+	const q = `SELECT count(1) FROM pgqueue WHERE kind = $1`
+
+	var n int
+	s.Require().NoError(s.pool.QueryRow(ctx, q, kind).Scan(&n))
+
+	return n
+}
+
+type successHandler struct {
+	baseHandler
+}
+
+func newSuccessHandler() *successHandler {
+	return &successHandler{}
+}
+
+func (h *successHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
+	h.callCounter.Add(1)
+	return nil
+}
+
+type errorHandler struct {
+	baseHandler
+}
+
+func newErrorHandler() *errorHandler {
+	return &errorHandler{}
+}
+
+func (h *errorHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
+	h.callCounter.Add(1)
+	return testErr
+}
+
+type panicHandler struct {
+	baseHandler
+}
+
+func newPanicHandler() *panicHandler {
+	return &panicHandler{}
+}
+
+func (h *panicHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
+	h.callCounter.Add(1)
+	panic("some panic")
+}
+
+type baseHandler struct {
+	callCounter atomic.Int32
+}
+
+func (h *baseHandler) callsCount() int {
+	return int(h.callCounter.Load())
 }

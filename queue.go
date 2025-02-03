@@ -11,24 +11,33 @@ import (
 	"github.com/DmitySH/wopo"
 )
 
+type TaskStatus string
+
+const (
+	TaskStatusNew        = "new"
+	TaskStatusSuccess    = "succeeded"
+	TaskStatusInProgress = "in_progress"
+	TaskStatusRetry      = "retry"
+	TaskStatusFailed     = "failed"
+)
+
 const (
 	wpBufferSizeToNumOfWorkersFactor = 2
 	defaultDBTimeout                 = time.Second * 3
 )
 
 // TODO:
-// logger
+// withLogger
 // metrics
-// transactions
 
-// TODO: benchmarks, refactor tests (suites)
+// TODO: benchmarks
 
 type empty = struct{}
 
 type DB interface {
 	CreateTask(ctx context.Context, task entity.FullTaskInfo) error
 	GetWaitingTasks(ctx context.Context, params entity.GetWaitingTasksParams) ([]entity.FullTaskInfo, error)
-	SoftFailTask(ctx context.Context, taskID int64) error
+	SoftFailTask(ctx context.Context, taskID int64, delay time.Duration) error
 	FailTask(ctx context.Context, taskID int64) error
 	SucceedTask(ctx context.Context, taskID int64) error
 	DeleteTerminalTasks(ctx context.Context, params entity.DeleteTerminalTasksParams) error
@@ -109,7 +118,7 @@ func (q *Queue) workLoop(kind taskKind) {
 	ctx, cancelWorkLoop := context.WithCancel(context.Background())
 	defer cancelWorkLoop()
 
-	t := time.NewTimer(kind.fetchPeriod())
+	t := time.NewTimer(kind.fetchDelayer())
 	defer t.Stop()
 
 	c := cleaner{
@@ -140,7 +149,7 @@ func (q *Queue) workLoop(kind taskKind) {
 			if err != nil {
 				log.Println(err)
 			}
-			t.Reset(kind.fetchPeriod())
+			t.Reset(kind.fetchDelayer())
 		}
 	}
 }
@@ -150,9 +159,9 @@ func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[entity.FullTaskIn
 	defer fetchCancel()
 
 	tasks, err := q.db.GetWaitingTasks(fetchCtx, entity.GetWaitingTasksParams{
-		KindID:           kind.id,
-		BatchSize:        kind.batchSize,
-		AttemptsInterval: kind.attemptsInterval,
+		KindID:       kind.id,
+		BatchSize:    kind.batchSize,
+		AttemptDelay: kind.attemptTimeout * 2,
 	})
 	if err != nil {
 		return fmt.Errorf("can't fetch tasks: %w", err)

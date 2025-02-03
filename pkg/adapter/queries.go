@@ -29,7 +29,8 @@ const succeedTaskQuery = `UPDATE pgqueue
 
 const softFailTaskQuery = `UPDATE pgqueue
 		     				  SET status = 'retry', attempts_left = attempts_left-1, 
-		         				  attempts_elapsed = attempts_elapsed+1, updated_at = now()
+		         				  attempts_elapsed = attempts_elapsed+1, updated_at = now(),
+		     				      next_attempt_time = now()+$2::interval
 		  				    WHERE id = $1
 		    				  AND status = 'in_progress'`
 

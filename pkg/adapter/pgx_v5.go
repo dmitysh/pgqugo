@@ -46,7 +46,7 @@ func (p *PGXv5) CreateTask(ctx context.Context, task entity.FullTaskInfo) error 
 }
 
 func (p *PGXv5) GetWaitingTasks(ctx context.Context, params entity.GetWaitingTasksParams) ([]entity.FullTaskInfo, error) {
-	rows, err := p.pool.Query(ctx, getWaitingTasksQuery, params.KindID, params.BatchSize, params.AttemptsInterval)
+	rows, err := p.pool.Query(ctx, getWaitingTasksQuery, params.KindID, params.BatchSize, params.AttemptDelay)
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +69,8 @@ func (p *PGXv5) SucceedTask(ctx context.Context, taskID int64) error {
 	return nil
 }
 
-func (p *PGXv5) SoftFailTask(ctx context.Context, taskID int64) error {
-	_, err := p.pool.Exec(ctx, softFailTaskQuery, taskID)
+func (p *PGXv5) SoftFailTask(ctx context.Context, taskID int64, delay time.Duration) error {
+	_, err := p.pool.Exec(ctx, softFailTaskQuery, taskID, delay)
 	if err != nil {
 		return err
 	}

@@ -3,9 +3,9 @@ package entity
 import "time"
 
 type GetWaitingTasksParams struct {
-	KindID           int16
-	BatchSize        int
-	AttemptsInterval time.Duration
+	KindID       int16
+	BatchSize    int
+	AttemptDelay time.Duration
 }
 
 type DeleteTerminalTasksParams struct {
