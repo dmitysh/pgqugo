@@ -13,6 +13,7 @@ import (
 	"github.com/DmitySH/pgqugo/internal/entity"
 	"github.com/DmitySH/pgqugo/pkg/adapter"
 	"github.com/DmitySH/pgqugo/pkg/delayer"
+	"github.com/DmitySH/pgqugo/pkg/log"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/goleak"
@@ -233,6 +234,7 @@ func (s *pgxV5Suite) TestHandlerPanic() {
 				pgqugo.WithMaxAttempts(3),
 				pgqugo.WithFetchPeriod(time.Millisecond*300, 0.5),
 				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+				pgqugo.WithLogger(log.NewNoOp()),
 			),
 		},
 	)

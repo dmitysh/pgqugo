@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/DmitySH/pgqugo/internal/entity"
@@ -14,7 +13,8 @@ import (
 type cleaner struct {
 	tk taskKind
 
-	db DB
+	db     DB
+	logger Logger
 }
 
 func newCleaner(tk taskKind, db DB) cleaner {
@@ -25,6 +25,8 @@ func newCleaner(tk taskKind, db DB) cleaner {
 }
 
 func (c cleaner) run(stopCh <-chan empty) {
+	ctx := context.Background()
+
 	t := time.NewTimer(time.Nanosecond)
 	defer t.Stop()
 
@@ -33,7 +35,7 @@ func (c cleaner) run(stopCh <-chan empty) {
 		case <-t.C:
 			err := c.cleanTerminalTasks(context.Background())
 			if err != nil {
-				log.Println(err)
+				c.tk.logger.Errorf(ctx, "[%d] failed to clean termainal tasks: %v", c.tk.id, err)
 			}
 
 			t.Reset(c.tk.cleanerCfg.period)

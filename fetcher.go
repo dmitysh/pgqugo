@@ -3,10 +3,10 @@ package pgqugo
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/DmitySH/pgqugo/internal/entity"
 	"github.com/DmitySH/wopo"
-	"log"
-	"time"
 )
 
 type fetcher struct {
@@ -31,21 +31,23 @@ func newFetcher(tk taskKind, db DB) fetcher {
 }
 
 func (f fetcher) run(stopCh <-chan empty) {
+	ctx := context.Background()
+
 	t := time.NewTimer(f.tk.fetchDelayer())
 	defer t.Stop()
 
 	f.wp.Start()
 	for {
 		select {
+		case <-t.C:
+			err := f.fetchAndPushTasks(ctx)
+			if err != nil {
+				f.tk.logger.Errorf(ctx, "[%d] failed to fetch and push tasks: %v", f.tk.id, err)
+			}
+			t.Reset(f.tk.fetchDelayer())
 		case <-stopCh:
 			f.wp.Stop()
 			return
-		case <-t.C:
-			err := f.fetchAndPushTasks(context.Background())
-			if err != nil {
-				log.Println(err)
-			}
-			t.Reset(f.tk.fetchDelayer())
 		}
 	}
 }

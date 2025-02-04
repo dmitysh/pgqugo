@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"time"
+
+	"github.com/DmitySH/pgqugo/pkg/log"
 )
 
 const (
@@ -30,6 +32,7 @@ type taskKind struct {
 	workerCount    int
 	attemptTimeout time.Duration
 
+	logger     Logger
 	cleanerCfg cleanerConfig
 }
 
@@ -39,8 +42,27 @@ type cleanerConfig struct {
 	limit            int
 }
 
+type Logger interface {
+	Warnf(ctx context.Context, format string, args ...any)
+	Errorf(ctx context.Context, format string, args ...any)
+}
+
 func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind {
-	tk := taskKind{
+	tk := defaultTaskKind(id, handler)
+
+	for _, opt := range opts {
+		opt(&tk)
+	}
+
+	if err := validateTaskKind(tk); err != nil {
+		panic(err)
+	}
+
+	return tk
+}
+
+func defaultTaskKind(id int16, handler TaskHandler) taskKind {
+	return taskKind{
 		id:      id,
 		handler: handler,
 
@@ -55,17 +77,8 @@ func NewTaskKind(id int16, handler TaskHandler, opts ...TaskKindOption) taskKind
 			period:           time.Minute * 10,
 			limit:            10_000,
 		},
+		logger: log.NewSTDLogger(),
 	}
-
-	for _, opt := range opts {
-		opt(&tk)
-	}
-
-	if err := validateTaskKind(tk); err != nil {
-		panic(err)
-	}
-
-	return tk
 }
 
 func validateTaskKind(kind taskKind) error {
@@ -179,5 +192,15 @@ func WithCleaningLimit(limit int) TaskKindOption {
 
 	return func(tk *taskKind) {
 		tk.cleanerCfg.limit = limit
+	}
+}
+
+func WithLogger(logger Logger) TaskKindOption {
+	if logger == nil {
+		panic("logger must not be nil")
+	}
+
+	return func(tk *taskKind) {
+		tk.logger = logger
 	}
 }
