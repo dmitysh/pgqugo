@@ -17,27 +17,34 @@ type cleaner struct {
 	db DB
 }
 
-func (c cleaner) run(ctx context.Context) {
+func newCleaner(tk taskKind, db DB) cleaner {
+	return cleaner{
+		tk: tk,
+		db: db,
+	}
+}
+
+func (c cleaner) run(stopCh <-chan empty) {
 	t := time.NewTimer(time.Nanosecond)
 	defer t.Stop()
 
 	for {
 		select {
 		case <-t.C:
-			err := c.cleanTerminalTasks(ctx)
+			err := c.cleanTerminalTasks(context.Background())
 			if err != nil {
 				log.Println(err)
 			}
 
 			t.Reset(c.tk.cleanerCfg.period)
-		case <-ctx.Done():
+		case <-stopCh:
 			return
 		}
 	}
 }
 
 func (c cleaner) cleanTerminalTasks(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultDBTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
 	defer cancel()
 
 	err := c.db.ExecuteJob(ctx, cleanerJob(c.tk.id), c.tk.cleanerCfg.period)

@@ -3,12 +3,10 @@ package pgqugo
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/DmitySH/pgqugo/internal/entity"
-	"github.com/DmitySH/wopo"
 )
 
 type TaskStatus string
@@ -22,8 +20,7 @@ const (
 )
 
 const (
-	wpBufferSizeToNumOfWorkersFactor = 2
-	defaultDBTimeout                 = time.Second * 3
+	defaultDBTimeout = time.Second * 3
 )
 
 // TODO:
@@ -93,8 +90,12 @@ func (q *Queue) Start() {
 	}
 
 	for _, kind := range q.kinds {
-		q.stopWg.Add(1)
-		go q.workLoop(kind)
+		f := newFetcher(kind, q.db)
+		c := newCleaner(kind, q.db)
+
+		q.stopWg.Add(2)
+		go q.runWithDone(f)
+		go q.runWithDone(c)
 	}
 }
 
@@ -112,66 +113,14 @@ func (q *Queue) registerJobs() error {
 	return nil
 }
 
-func (q *Queue) workLoop(kind taskKind) {
-	defer q.stopWg.Done()
-
-	ctx, cancelWorkLoop := context.WithCancel(context.Background())
-	defer cancelWorkLoop()
-
-	t := time.NewTimer(kind.fetchDelayer())
-	defer t.Stop()
-
-	c := cleaner{
-		tk: kind,
-		db: q.db,
-	}
-	go c.run(ctx)
-
-	e := executor{
-		tk: kind,
-		db: q.db,
-	}
-	wp := wopo.NewPool(
-		e.execute,
-		wopo.WithWorkerCount[entity.FullTaskInfo, empty](kind.workerCount),
-		wopo.WithTaskBufferSize[entity.FullTaskInfo, empty](kind.workerCount*wpBufferSizeToNumOfWorkersFactor),
-		wopo.WithResultBufferSize[entity.FullTaskInfo, empty](-1),
-	)
-	wp.Start()
-
-	for {
-		select {
-		case <-q.stopCh:
-			wp.Stop()
-			return
-		case <-t.C:
-			err := q.fetchAndPushTasks(kind, wp)
-			if err != nil {
-				log.Println(err)
-			}
-			t.Reset(kind.fetchDelayer())
-		}
-	}
+type runner interface {
+	run(stopCh <-chan empty)
 }
 
-func (q *Queue) fetchAndPushTasks(kind taskKind, wp *wopo.Pool[entity.FullTaskInfo, empty]) error {
-	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), defaultDBTimeout)
-	defer fetchCancel()
+func (q *Queue) runWithDone(r runner) {
+	defer q.stopWg.Done()
 
-	tasks, err := q.db.GetWaitingTasks(fetchCtx, entity.GetWaitingTasksParams{
-		KindID:       kind.id,
-		BatchSize:    kind.batchSize,
-		AttemptDelay: kind.attemptTimeout * 2,
-	})
-	if err != nil {
-		return fmt.Errorf("can't fetch tasks: %w", err)
-	}
-
-	for i := 0; i < len(tasks); i++ {
-		wp.PushTask(context.Background(), tasks[i])
-	}
-
-	return nil
+	r.run(q.stopCh)
 }
 
 func (q *Queue) Stop() {
