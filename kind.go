@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DmitySH/pgqugo/pkg/log"
+	"github.com/DmitySH/pgqugo/pkg/stats"
 )
 
 const (
@@ -15,6 +16,14 @@ const (
 
 type TaskHandler interface {
 	HandleTask(ctx context.Context, task ProcessingTask) error
+}
+
+type StatsCollector interface {
+	IncNewTasks()
+	AddInProgressTasks(count int)
+	IncSuccessTasks()
+	IncSoftFailedTasks()
+	IncFailedTasks()
 }
 
 type AttemptDelayer func(attempt int16) time.Duration
@@ -32,8 +41,9 @@ type taskKind struct {
 	workerCount    int
 	attemptTimeout time.Duration
 
-	logger     Logger
-	cleanerCfg cleanerConfig
+	cleanerCfg     cleanerConfig
+	logger         Logger
+	statsCollector StatsCollector
 }
 
 type cleanerConfig struct {
@@ -77,7 +87,8 @@ func defaultTaskKind(id int16, handler TaskHandler) taskKind {
 			period:           time.Minute * 10,
 			limit:            10_000,
 		},
-		logger: log.NewSTDLogger(),
+		logger:         log.NewSTDLogger(),
+		statsCollector: stats.NewLocalCollector(),
 	}
 }
 
@@ -202,5 +213,15 @@ func WithLogger(logger Logger) TaskKindOption {
 
 	return func(tk *taskKind) {
 		tk.logger = logger
+	}
+}
+
+func WithStatsCollector(collector StatsCollector) TaskKindOption {
+	if collector == nil {
+		panic("collector must not be nil")
+	}
+
+	return func(tk *taskKind) {
+		tk.statsCollector = collector
 	}
 }

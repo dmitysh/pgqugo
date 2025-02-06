@@ -23,12 +23,6 @@ const (
 	defaultDBTimeout = time.Second * 3
 )
 
-// TODO:
-// withLogger
-// metrics
-
-// TODO: benchmarks
-
 type empty = struct{}
 
 type DB interface {
@@ -141,7 +135,13 @@ func (q *Queue) CreateTask(ctx context.Context, task Task) error {
 		AttemptsLeft: kind.maxAttempts,
 	}
 
-	return q.db.CreateTask(ctx, ti)
+	err := q.db.CreateTask(ctx, ti)
+	if err != nil {
+		return err
+	}
+	kind.statsCollector.IncNewTasks()
+
+	return nil
 }
 
 type Task struct {

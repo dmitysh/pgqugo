@@ -87,21 +87,6 @@ func (p *PGXv5) FailTask(ctx context.Context, taskID int64) error {
 	return nil
 }
 
-func (p *PGXv5) GetTask(ctx context.Context, kind int16, delay time.Duration) ([]entity.FullTaskInfo, error) {
-	rows, err := p.pool.Query(ctx, getWaitingTasksQuery, kind, delay)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	taskInfos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[entity.FullTaskInfo])
-	if err != nil {
-		return nil, err
-	}
-
-	return taskInfos, nil
-}
-
 func (p *PGXv5) DeleteTerminalTasks(ctx context.Context, params entity.DeleteTerminalTasksParams) error {
 	_, err := p.pool.Exec(ctx, cleanTerminalTasksQuery, params.KindID, params.After, params.Limit)
 	if err != nil {

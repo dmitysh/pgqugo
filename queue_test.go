@@ -14,6 +14,7 @@ import (
 	"github.com/DmitySH/pgqugo/pkg/adapter"
 	"github.com/DmitySH/pgqugo/pkg/delayer"
 	"github.com/DmitySH/pgqugo/pkg/log"
+	"github.com/DmitySH/pgqugo/pkg/stats"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/goleak"
@@ -94,6 +95,7 @@ func (s *pgxV5Suite) clearQueueTable() {
 func (s *pgxV5Suite) TestCreateTaskSuccess() {
 	ctx := context.Background()
 
+	sc := stats.NewLocalCollector()
 	h := newSuccessHandler()
 	q := pgqugo.New(
 		adapter.NewPGXv5(s.pool),
@@ -104,6 +106,7 @@ func (s *pgxV5Suite) TestCreateTaskSuccess() {
 				pgqugo.WithFetchPeriod(time.Millisecond*300, 0),
 				pgqugo.WithMaxAttempts(3),
 				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+				pgqugo.WithStatsCollector(sc),
 			),
 		},
 	)
@@ -141,6 +144,10 @@ func (s *pgxV5Suite) TestCreateTaskSuccess() {
 	}
 
 	s.Require().Equal(3, h.callsCount())
+
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusNew))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusInProgress))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusSuccess))
 }
 
 func (s *pgxV5Suite) TestCreateTaskUnknownKind() {

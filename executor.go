@@ -39,18 +39,21 @@ func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty,
 				return empty{}, fmt.Errorf("can't fail task: %w", err)
 			}
 			e.tk.logger.Errorf(ctx, "[%d] task (%d) has no attempts left, last error: %v", e.tk.id, task.ID, handlerErr)
+			e.tk.statsCollector.IncFailedTasks()
 		} else {
 			err := dbRetry(ctx, "SoftFailTask", func() error { return e.db.SoftFailTask(dbCtx, task.ID, e.tk.attemptDelayer(task.AttemptsElapsed)) }, e.tk.logger)
 			if err != nil {
 				return empty{}, fmt.Errorf("can't soft fail task: %w", err)
 			}
 			e.tk.logger.Warnf(ctx, "[%d] task (%d) failed, error: %v", e.tk.id, task.ID, handlerErr)
+			e.tk.statsCollector.IncSoftFailedTasks()
 		}
 	} else {
 		err := dbRetry(ctx, "SucceedTask", func() error { return e.db.SucceedTask(dbCtx, task.ID) }, e.tk.logger)
 		if err != nil {
 			return empty{}, fmt.Errorf("can't succeed task: %w", err)
 		}
+		e.tk.statsCollector.IncSuccessTasks()
 	}
 
 	return empty{}, nil

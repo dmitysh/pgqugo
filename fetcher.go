@@ -56,15 +56,16 @@ func (f fetcher) fetchAndPushTasks(ctx context.Context) error {
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, defaultDBTimeout)
 	defer fetchCancel()
 
-	const overAttemptTimeoutTime = time.Minute
+	const overAttemptTimeoutDuration = time.Minute
 	tasks, err := f.db.GetWaitingTasks(fetchCtx, entity.GetWaitingTasksParams{
 		KindID:       f.tk.id,
 		BatchSize:    f.tk.batchSize,
-		AttemptDelay: f.tk.attemptTimeout + overAttemptTimeoutTime,
+		AttemptDelay: f.tk.attemptTimeout + overAttemptTimeoutDuration,
 	})
 	if err != nil {
 		return fmt.Errorf("can't fetch tasks: %w", err)
 	}
+	f.tk.statsCollector.AddInProgressTasks(len(tasks))
 
 	for i := 0; i < len(tasks); i++ {
 		f.wp.PushTask(ctx, tasks[i])
