@@ -96,7 +96,7 @@ func (s *pgxV5Suite) TestCreateTaskSuccess() {
 	ctx := context.Background()
 
 	sc := stats.NewLocalCollector()
-	h := newSuccessHandler()
+	h := newSuccessHandler(0)
 	q := pgqugo.New(
 		adapter.NewPGXv5(s.pool),
 		pgqugo.TaskKinds{
@@ -148,6 +148,22 @@ func (s *pgxV5Suite) TestCreateTaskSuccess() {
 	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusNew))
 	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusInProgress))
 	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusSuccess))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusRetry))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusFailed))
+}
+
+func (s *pgxV5Suite) getTasksByStatus(kind int16, status pgqugo.TaskStatus) int {
+	ctx, cancel := s.newContextWithDBTimeout()
+	defer cancel()
+
+	const q = `SELECT count(1) FROM pgqueue 
+                WHERE kind = $1
+                  AND status = $2`
+
+	var n int
+	s.Require().NoError(s.pool.QueryRow(ctx, q, kind, status).Scan(&n))
+
+	return n
 }
 
 func (s *pgxV5Suite) TestCreateTaskUnknownKind() {
@@ -179,6 +195,7 @@ func (s *pgxV5Suite) TestCreateTaskUnknownKind() {
 func (s *pgxV5Suite) TestHandlerError() {
 	ctx := context.Background()
 
+	sc := stats.NewLocalCollector()
 	h := newErrorHandler()
 	q := pgqugo.New(
 		adapter.NewPGXv5(s.pool),
@@ -189,6 +206,7 @@ func (s *pgxV5Suite) TestHandlerError() {
 				pgqugo.WithMaxAttempts(3),
 				pgqugo.WithFetchPeriod(time.Millisecond*300, 0.5),
 				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+				pgqugo.WithStatsCollector(sc),
 			),
 		},
 	)
@@ -226,11 +244,18 @@ func (s *pgxV5Suite) TestHandlerError() {
 	}
 
 	s.Require().Equal(9, h.callsCount())
+
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusNew))
+	s.Require().Equal(int64(9), sc.GetTasksByStatus(pgqugo.TaskStatusInProgress))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusSuccess))
+	s.Require().Equal(int64(6), sc.GetTasksByStatus(pgqugo.TaskStatusRetry))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusFailed))
 }
 
 func (s *pgxV5Suite) TestHandlerPanic() {
 	ctx := context.Background()
 
+	sc := stats.NewLocalCollector()
 	h := newPanicHandler()
 	q := pgqugo.New(
 		adapter.NewPGXv5(s.pool),
@@ -242,6 +267,7 @@ func (s *pgxV5Suite) TestHandlerPanic() {
 				pgqugo.WithFetchPeriod(time.Millisecond*300, 0.5),
 				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
 				pgqugo.WithLogger(log.NewNoOp()),
+				pgqugo.WithStatsCollector(sc),
 			),
 		},
 	)
@@ -279,20 +305,12 @@ func (s *pgxV5Suite) TestHandlerPanic() {
 	}
 
 	s.Require().Equal(9, h.callsCount())
-}
 
-func (s *pgxV5Suite) getTasksByStatus(kind int16, status pgqugo.TaskStatus) int {
-	ctx, cancel := s.newContextWithDBTimeout()
-	defer cancel()
-
-	const q = `SELECT count(1) FROM pgqueue 
-                WHERE kind = $1
-                  AND status = $2`
-
-	var n int
-	s.Require().NoError(s.pool.QueryRow(ctx, q, kind, status).Scan(&n))
-
-	return n
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusNew))
+	s.Require().Equal(int64(9), sc.GetTasksByStatus(pgqugo.TaskStatusInProgress))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusSuccess))
+	s.Require().Equal(int64(6), sc.GetTasksByStatus(pgqugo.TaskStatusRetry))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusFailed))
 }
 
 func (s *pgxV5Suite) getTaskByKey(kind int16, key string) entity.FullTaskInfo {
@@ -334,14 +352,24 @@ func (s *pgxV5Suite) getTotalTasks(kind int16) int {
 
 type successHandler struct {
 	baseHandler
+	dur time.Duration
 }
 
-func newSuccessHandler() *successHandler {
-	return &successHandler{}
+func newSuccessHandler(dur time.Duration) *successHandler {
+	return &successHandler{
+		dur: dur,
+	}
 }
 
-func (h *successHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
+func (h *successHandler) HandleTask(ctx context.Context, _ pgqugo.ProcessingTask) error {
 	h.callCounter.Add(1)
+
+	select {
+	case <-time.After(h.dur):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	return nil
 }
 
