@@ -19,7 +19,7 @@ CREATE TABLE pgqueue
     next_attempt_time timestamp with time zone,
     created_at        timestamp with time zone default now() not null,
     updated_at        timestamp with time zone default now() not null
-) WITH (fillfactor = 75);
+) WITH (fillfactor = 90);
 
 CREATE UNIQUE INDEX pgqueue_key_kind_unique_idx ON pgqueue (key, kind)
     WHERE key IS NOT NULL;

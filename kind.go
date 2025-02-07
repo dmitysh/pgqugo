@@ -78,7 +78,7 @@ func defaultTaskKind(id int16, handler TaskHandler) taskKind {
 		maxAttempts:    3,
 		fetchDelayer:   nil,
 		attemptDelayer: nil,
-		batchSize:      10,
+		batchSize:      100,
 		workerCount:    1,
 		attemptTimeout: maxAttemptTimeout,
 		cleanerCfg: cleanerConfig{
