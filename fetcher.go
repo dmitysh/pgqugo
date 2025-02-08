@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DmitySH/pgqugo/internal/entity"
-	"github.com/DmitySH/wopo"
+	"github.com/dmitysh/pgqugo/internal/entity"
+	"github.com/dmitysh/wopo"
 )
 
 type fetcher struct {

@@ -1,11 +1,14 @@
+github.com/DmitySH/pgqugo v0.0.0-20250207163207-692abfa2e170 h1:opUUzWozeVBrMdrdLW8KnIVNfx7EiyCovhPfjGhb4m8=
+github.com/DmitySH/pgqugo v0.0.0-20250207163207-692abfa2e170/go.mod h1:G19ihCATx8+8V+huu888YBNwpr94YpvMjlnRDdhBpTk=
 github.com/DmitySH/wopo v0.1.1 h1:n5z0v5HAX0igrpvqOxcPLcd6zrOv6lqyJMPKTsEDHnY=
 github.com/DmitySH/wopo v0.1.1/go.mod h1:p7vSve88W2TL3sTmbLSgkxlFANH0zrPCTNlqanYHeXM=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
-github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/dmitysh/wopo v0.1.2 h1:EZ50rqcgNMrNZa9g/vtZmYUyYzy0t1DUowhKOj+cZEU=
+github.com/dmitysh/wopo v0.1.2/go.mod h1://h2sYkJj86Jv/W4OsscpFcvuN3W+V7VwmzXp7xnzlc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=

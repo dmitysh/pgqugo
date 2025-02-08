@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DmitySH/pgqugo/internal/entity"
+	"github.com/dmitysh/pgqugo/internal/entity"
 )
 
 type TaskStatus string

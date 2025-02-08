@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/DmitySH/pgqugo/internal/entity"
-	"github.com/DmitySH/pgqugo/internal/inerrors"
+	"github.com/dmitysh/pgqugo/internal/entity"
+	"github.com/dmitysh/pgqugo/internal/inerrors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"

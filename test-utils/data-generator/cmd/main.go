@@ -6,8 +6,8 @@ import (
 	"log"
 	"math/rand/v2"
 
-	"github.com/DmitySH/pgqugo"
-	"github.com/DmitySH/pgqugo/pkg/adapter"
+	"github.com/dmitysh/pgqugo"
+	"github.com/dmitysh/pgqugo/pkg/adapter"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

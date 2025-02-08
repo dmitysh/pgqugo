@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DmitySH/pgqugo"
-	"github.com/DmitySH/pgqugo/pkg/adapter"
-	"github.com/DmitySH/pgqugo/pkg/delayer"
+	"github.com/dmitysh/pgqugo"
+	"github.com/dmitysh/pgqugo/pkg/adapter"
+	"github.com/dmitysh/pgqugo/pkg/delayer"
 )
 
 func (s *pgxV5Suite) TestWithBatchSize() {

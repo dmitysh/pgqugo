@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/DmitySH/pgqugo/internal/entity"
+	"github.com/dmitysh/pgqugo/internal/entity"
 )
 
 type executor struct {

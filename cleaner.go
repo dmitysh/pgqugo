@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DmitySH/pgqugo/internal/entity"
-	"github.com/DmitySH/pgqugo/internal/inerrors"
+	"github.com/dmitysh/pgqugo/internal/entity"
+	"github.com/dmitysh/pgqugo/internal/inerrors"
 )
 
 type cleaner struct {

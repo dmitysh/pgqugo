@@ -4,7 +4,7 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/DmitySH/pgqugo"
+	"github.com/dmitysh/pgqugo"
 )
 
 func Linear(base time.Duration, deviation float64) pgqugo.AttemptDelayer {

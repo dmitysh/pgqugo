@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DmitySH/pgqugo/pkg/log"
-	"github.com/DmitySH/pgqugo/pkg/stats"
+	"github.com/dmitysh/pgqugo/pkg/log"
+	"github.com/dmitysh/pgqugo/pkg/stats"
 )
 
 const (
