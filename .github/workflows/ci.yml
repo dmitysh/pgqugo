@@ -40,7 +40,7 @@ jobs:
           TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/testdb
         run: |
           go install github.com/pressly/goose/v3/cmd/goose@latest
-          goose -dir migrations/v1 postgres "TEST_PG_DSN" up
+          goose -dir migrations/v1 postgres "$TEST_PG_DSN" up
       - name: Test
         run: go test -parallel=1 -race ./...
         env:
