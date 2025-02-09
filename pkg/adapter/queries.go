@@ -1,8 +1,9 @@
 package adapter
 
 const createTaskQuery = `INSERT INTO pgqueue (kind, key, payload, attempts_left, next_attempt_time) 
-		      				  VALUES ($1, $2, $3, $4, now())
-		      			   RETURNING id`
+		      			 VALUES ($1, $2, $3, $4, now())
+		      		ON CONFLICT DO NOTHING
+		      	      RETURNING id`
 
 const getWaitingTasksQuery = `WITH selected AS (
 							SELECT id

@@ -240,6 +240,32 @@ func (s *pgxV5Suite) TestCreateTaskUnknownKind() {
 	s.Require().ErrorContains(q.CreateTask(ctx, task), "kind 2 does not exist")
 }
 
+func (s *pgxV5Suite) TestCreateTaskIdempotencyConflict() {
+	ctx := context.Background()
+
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				nil,
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+			),
+		},
+	)
+	q.Start()
+	defer q.Stop()
+
+	key := "conflict"
+	task := pgqugo.Task{
+		Kind:    testTaskKind,
+		Key:     &key,
+		Payload: "{}",
+	}
+	s.Require().NoError(q.CreateTask(ctx, task))
+	s.Require().NoError(q.CreateTask(ctx, task))
+}
 func (s *pgxV5Suite) TestHandlerError() {
 	ctx := context.Background()
 
