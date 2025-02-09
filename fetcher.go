@@ -57,7 +57,7 @@ func (f fetcher) fetchAndPushTasks(ctx context.Context) error {
 	defer fetchCancel()
 
 	const overAttemptTimeoutDuration = time.Minute
-	tasks, err := f.db.GetWaitingTasks(fetchCtx, entity.GetWaitingTasksParams{
+	tasks, err := f.db.GetPendingTasks(fetchCtx, entity.GetPendingTasksParams{
 		KindID:       f.tk.id,
 		BatchSize:    f.tk.batchSize,
 		AttemptDelay: f.tk.attemptTimeout + overAttemptTimeoutDuration,

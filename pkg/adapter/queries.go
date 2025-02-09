@@ -5,7 +5,7 @@ const createTaskQuery = `INSERT INTO pgqueue (kind, key, payload, attempts_left,
 		      		ON CONFLICT DO NOTHING
 		      	      RETURNING id`
 
-const getWaitingTasksQuery = `WITH selected AS (
+const getPendingTasksQuery = `WITH selected AS (
 							SELECT id
 							  FROM pgqueue
 							 WHERE kind = $1

@@ -24,7 +24,7 @@ CREATE TABLE pgqueue
 CREATE UNIQUE INDEX pgqueue_key_kind_unique_idx ON pgqueue (key, kind)
     WHERE key IS NOT NULL;
 
-CREATE INDEX pgqueue_waiting_tasks_idx ON pgqueue (kind, next_attempt_time)
+CREATE INDEX pgqueue_pending_tasks_idx ON pgqueue (kind, next_attempt_time)
     WHERE status in ('new', 'in_progress', 'retry');
 
 CREATE INDEX pgqueue_clean_tasks_idx ON pgqueue (kind, updated_at)

@@ -49,7 +49,10 @@ func (c cleaner) cleanTerminalTasks(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
 	defer cancel()
 
-	err := c.db.ExecuteJob(ctx, cleanerJob(c.tk.id), c.tk.cleanerCfg.period)
+	err := c.db.ExecuteJob(ctx, entity.ExecuteJobParams{
+		Job:       cleanerJob(c.tk.id),
+		JobPeriod: c.tk.cleanerCfg.period,
+	})
 	if errors.Is(err, inerrors.ErrJobExecutionCancelled) {
 		return nil
 	}

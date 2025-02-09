@@ -3,8 +3,6 @@ package adapter
 import (
 	"context"
 	"errors"
-	"time"
-
 	"github.com/dmitysh/pgqugo/internal/entity"
 	"github.com/dmitysh/pgqugo/internal/inerrors"
 	"github.com/jackc/pgx/v5"
@@ -45,8 +43,8 @@ func (p *PGXv5) CreateTask(ctx context.Context, task entity.FullTaskInfo) error 
 	return nil
 }
 
-func (p *PGXv5) GetWaitingTasks(ctx context.Context, params entity.GetWaitingTasksParams) ([]entity.FullTaskInfo, error) {
-	rows, err := p.pool.Query(ctx, getWaitingTasksQuery, params.KindID, params.BatchSize, params.AttemptDelay)
+func (p *PGXv5) GetPendingTasks(ctx context.Context, params entity.GetPendingTasksParams) ([]entity.FullTaskInfo, error) {
+	rows, err := p.pool.Query(ctx, getPendingTasksQuery, params.KindID, params.BatchSize, params.AttemptDelay)
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +67,8 @@ func (p *PGXv5) SucceedTask(ctx context.Context, taskID int64) error {
 	return nil
 }
 
-func (p *PGXv5) SoftFailTask(ctx context.Context, taskID int64, delay time.Duration) error {
-	_, err := p.pool.Exec(ctx, softFailTaskQuery, taskID, delay)
+func (p *PGXv5) SoftFailTask(ctx context.Context, params entity.SoftFailTasksParams) error {
+	_, err := p.pool.Exec(ctx, softFailTaskQuery, params.TaskID, params.Delay)
 	if err != nil {
 		return err
 	}
@@ -105,9 +103,9 @@ func (p *PGXv5) RegisterJob(ctx context.Context, job string) error {
 	return nil
 }
 
-func (p *PGXv5) ExecuteJob(ctx context.Context, jobName string, jobPeriod time.Duration) error {
+func (p *PGXv5) ExecuteJob(ctx context.Context, params entity.ExecuteJobParams) error {
 	var ok bool
-	err := p.pool.QueryRow(ctx, executeJobQuery, jobName, jobPeriod).Scan(&ok)
+	err := p.pool.QueryRow(ctx, executeJobQuery, params.Job, params.JobPeriod).Scan(&ok)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return inerrors.ErrJobExecutionCancelled
 	}
