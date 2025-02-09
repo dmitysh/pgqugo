@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg-version }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    strategy:
+      matrix:
+        go-version: [ "1.22", "1.23" ]
+        pg-version: [ 15, 16, 17 ]
+    steps:
+      - name: Get code from repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Apply migrations
+        env:
+          TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/testdb
+        run: |
+          go install github.com/pressly/goose/v3/cmd/goose@latest
+          goose -dir migrations/v1 postgres "TEST_PG_DSN" up
+      - name: Test
+        run: go test -parallel=1 -race ./...
+        env:
+          TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/testdb
