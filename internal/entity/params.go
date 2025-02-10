@@ -2,6 +2,7 @@ package entity
 
 import "time"
 
+// GetPendingTasksParams parameters for GetPendingTasks query
 type GetPendingTasksParams struct {
 	KindID       int16
 	BatchSize    int
