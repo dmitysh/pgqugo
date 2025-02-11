@@ -13,3 +13,12 @@ migrate-up:
 .PHONY: migrate-down
 migrate-down:
 	goose -dir=migrations/v1 postgres postgres://postgres:postgres@localhost:5490/postgres down
+
+.PHONY: lint
+lint:
+	golangci-lint run \
+		--config=.golangci.pipeline.yaml \
+		--sort-results \
+		--max-issues-per-linter=1000 \
+		--max-same-issues=1000 \
+		./...
