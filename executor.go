@@ -14,6 +14,13 @@ type executor struct {
 	db DB
 }
 
+// ProcessingTask used to operate with task in queue handlers
+type ProcessingTask struct {
+	Task
+	AttemptsLeft    int16
+	AttemptsElapsed int16
+}
+
 func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty, error) {
 	pt := ProcessingTask{
 		Task: Task{
@@ -72,7 +79,6 @@ func (e executor) safeHandle(ctx context.Context, pt ProcessingTask) (err error)
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic in handler: %s", string(debug.Stack()))
 		}
-		return
 	}()
 
 	return e.tk.handler.HandleTask(ctx, pt)

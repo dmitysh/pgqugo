@@ -18,8 +18,8 @@ const getPendingTasksQuery = `WITH selected AS (
 							UPDATE pgqueue
 							   SET status = 'in_progress', next_attempt_time = now()+$3::interval, updated_at = now()
 							 WHERE id IN (SELECT id FROM selected)
-						 RETURNING id, kind, key, payload, status, attempts_left-1, attempts_elapsed+1,
-								   next_attempt_time, created_at, updated_at`
+						 RETURNING id, key, created_at, updated_at, next_attempt_time, payload,
+								   status, kind, attempts_left-1, attempts_elapsed+1`
 
 const succeedTaskQuery = `UPDATE pgqueue
 		     				 SET status = 'succeeded', attempts_left = attempts_left-1, 

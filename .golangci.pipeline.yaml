@@ -6,13 +6,13 @@ run:
   tests: true
 
 output:
-  format: colored-line-number
+  formats: colored-line-number
   print-issued-lines: true
   print-linter-name: true
 
 linters-settings:
   govet:
-    check-shadowing: true
+    enable-all: true
   dupl:
     threshold: 100
   goconst:
@@ -27,8 +27,9 @@ linters:
     - goimports
     - gosec
     - govet
+    - gosimple
+    - staticcheck
     - ineffassign
-    - megacheck
     - revive
     - typecheck
     - unused
@@ -37,6 +38,8 @@ issues:
   exclude-use-default: false
   exclude:
     - G104
+    - Use of weak random number generator
+    - fieldalignment
     # for "public interface + private struct implementation" cases only!
     - exported func .* returns unexported type .*, which can be annoying to use
     - should have a package comment

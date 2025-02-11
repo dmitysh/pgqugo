@@ -31,7 +31,7 @@ const (
 )
 
 var (
-	testErr = errors.New("some error")
+	errTest = errors.New("some error")
 )
 
 func TestMain(m *testing.M) {
@@ -175,7 +175,7 @@ func (s *pgxV5Suite) TestCreateTaskTx() {
 
 	tx, err := s.pool.Begin(ctx)
 	s.Require().NoError(err)
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint: errcheck
 
 	const taskCount = 3
 	for i := 0; i < taskCount; i++ {
@@ -191,7 +191,7 @@ func (s *pgxV5Suite) TestCreateTaskTx() {
 			s.Require().NoError(q.CreateTask(ctx, task))
 		}
 	}
-	tx.Rollback(ctx)
+	s.Require().NoError(tx.Rollback(ctx))
 
 	s.Require().Eventually(func() bool {
 		return s.getTasksByStatus(testTaskKind, pgqugo.TaskStatusSuccess) == 1
@@ -457,7 +457,7 @@ func newErrorHandler() *errorHandler {
 
 func (h *errorHandler) HandleTask(_ context.Context, _ pgqugo.ProcessingTask) error {
 	h.callCounter.Add(1)
-	return testErr
+	return errTest
 }
 
 type panicHandler struct {

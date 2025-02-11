@@ -9,14 +9,20 @@ import (
 	"github.com/dmitysh/pgqugo/internal/entity"
 )
 
+// TaskStatus status of task in queue
 type TaskStatus string
 
 const (
-	TaskStatusNew        = "new"
-	TaskStatusSuccess    = "succeeded"
+	// TaskStatusNew new (just created) task
+	TaskStatusNew = "new"
+	// TaskStatusSuccess successfully completed task (terminal status)
+	TaskStatusSuccess = "succeeded"
+	// TaskStatusInProgress task being processing right now
 	TaskStatusInProgress = "in_progress"
-	TaskStatusRetry      = "retry"
-	TaskStatusFailed     = "failed"
+	// TaskStatusRetry failed tasks with positive amount of retry attempts
+	TaskStatusRetry = "retry"
+	// TaskStatusFailed failed tasks without any retry attempts (terminal status)
+	TaskStatusFailed = "failed"
 )
 
 const (
@@ -25,6 +31,7 @@ const (
 
 type empty = struct{}
 
+// DB PostgreSQL database interface
 type DB interface {
 	CreateTask(ctx context.Context, task entity.FullTaskInfo) error
 	GetPendingTasks(ctx context.Context, params entity.GetPendingTasksParams) ([]entity.FullTaskInfo, error)
@@ -36,14 +43,17 @@ type DB interface {
 	ExecuteJob(ctx context.Context, params entity.ExecuteJobParams) error
 }
 
+// Queue queue struct
 type Queue struct {
 	db    DB
 	kinds map[int16]taskKind
 
-	stopWg sync.WaitGroup
 	stopCh chan empty
+	stopWg sync.WaitGroup
 }
 
+// New Queue constructor.
+// Only validates tasks kinds and initializes struct, nothing more
 func New(db DB, kinds TaskKinds) *Queue {
 	err := validateKinds(kinds)
 	if err != nil {
@@ -77,6 +87,7 @@ func validateKinds(kinds TaskKinds) error {
 	return nil
 }
 
+// Start starts getting tasks from the queue and executing them in handlers
 func (q *Queue) Start() {
 	err := q.registerJobs()
 	if err != nil {
@@ -117,11 +128,20 @@ func (q *Queue) runWithDone(r runner) {
 	r.run(q.stopCh)
 }
 
+// Stop stops receiving tasks from the queue. The call is blocked until all the handlers of the already running handlers are finished
 func (q *Queue) Stop() {
 	close(q.stopCh)
 	q.stopWg.Wait()
 }
 
+// Task used to create task in queue
+type Task struct {
+	Key     *string
+	Payload string
+	Kind    int16
+}
+
+// CreateTask creates a task in the queue
 func (q *Queue) CreateTask(ctx context.Context, task Task) error {
 	kind, exists := q.kinds[task.Kind]
 	if !exists {
@@ -142,16 +162,4 @@ func (q *Queue) CreateTask(ctx context.Context, task Task) error {
 	kind.statsCollector.IncNewTasks()
 
 	return nil
-}
-
-type Task struct {
-	Kind    int16
-	Key     *string
-	Payload string
-}
-
-type ProcessingTask struct {
-	Task
-	AttemptsLeft    int16
-	AttemptsElapsed int16
 }
