@@ -117,7 +117,7 @@ func (s *pgxV5Suite) TestCreateTaskSuccess() {
 	for i := 0; i < taskCount; i++ {
 		key := fmt.Sprintf("key_%d", i)
 		task := pgqugo.Task{
-			Kind:    1,
+			Kind:    testTaskKind,
 			Key:     &key,
 			Payload: "{}",
 		}
@@ -181,7 +181,7 @@ func (s *pgxV5Suite) TestCreateTaskTx() {
 	for i := 0; i < taskCount; i++ {
 		key := fmt.Sprintf("key_%d", i)
 		task := pgqugo.Task{
-			Kind:    1,
+			Kind:    testTaskKind,
 			Key:     &key,
 			Payload: "{}",
 		}
