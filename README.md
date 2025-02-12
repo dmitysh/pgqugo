@@ -50,16 +50,14 @@ The list is updated based on user requests. In addition, you can independently i
 ## Extra features
 * Kind+key optional idempotency
 * Cleaner job
+* Use your Logger
+* And your Statistics collector
 
 ## Settings
 * Number of task's attempts, attempt interval, attempt timeout
 * Fetch query's parameters (batch size, interval)
 * Number of worker gorutines
 * Cleaner's parameters (interval, limit, TTL of terminal tasks)
-* Logger
-* Statistics collector
-
-## Example usage
 
 ## Status model
 ![pgqugo.png](docs/pgqugo.png)
