@@ -45,3 +45,19 @@ jobs:
         run: go test -parallel=1 -race ./...
         env:
           TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/testdb
+  linter:
+    name: Linter
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Get code from repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.63.4
+          args: --config=.golangci.pipeline.yaml --sort-results --max-issues-per-linter=1000 --max-same-issues=1000 ./...

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// random data generator for pgqugo
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -41,7 +42,7 @@ func main() {
 
 	kinds := pgqugo.TaskKinds{}
 	for i := 1; i <= *numberOfKinds; i++ {
-		kinds = append(kinds, pgqugo.NewTaskKind(int16(i), nil))
+		kinds = append(kinds, pgqugo.NewTaskKind(int16(i), nil)) //nolint: gosec
 	}
 	pgq := pgqugo.New(adapter.NewPGXv5(p), kinds)
 
@@ -55,7 +56,7 @@ func generateTasks(ctx context.Context, pgq *pgqugo.Queue, numberOfTasks int, nu
 		pl := generateRandomString(rand.IntN(1000))
 
 		err := pgq.CreateTask(ctx, pgqugo.Task{
-			Kind:    int16(rand.IntN(numberOfKinds) + 1),
+			Kind:    int16(rand.IntN(numberOfKinds) + 1), //nolint: gosec
 			Key:     &key,
 			Payload: pl,
 		})

@@ -33,7 +33,7 @@ func newFetcher(tk taskKind, db DB) fetcher {
 func (f fetcher) run(stopCh <-chan empty) {
 	ctx := context.Background()
 
-	t := time.NewTimer(f.tk.fetchDelayer())
+	t := time.NewTimer(f.tk.fetchPeriod())
 	defer t.Stop()
 
 	f.wp.Start()
@@ -44,7 +44,7 @@ func (f fetcher) run(stopCh <-chan empty) {
 			if err != nil {
 				f.tk.logger.Errorf(ctx, "[%d] failed to fetch and push tasks: %v", f.tk.id, err)
 			}
-			t.Reset(f.tk.fetchDelayer())
+			t.Reset(f.tk.fetchPeriod())
 		case <-stopCh:
 			f.wp.Stop()
 			return

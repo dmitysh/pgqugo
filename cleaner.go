@@ -13,8 +13,7 @@ import (
 type cleaner struct {
 	tk taskKind
 
-	db     DB
-	logger Logger
+	db DB
 }
 
 func newCleaner(tk taskKind, db DB) cleaner {

@@ -2,15 +2,18 @@ package entity
 
 import "time"
 
+// FullTaskInfo queue task model
 type FullTaskInfo struct {
-	ID              int64
-	Kind            int16
-	Key             *string
-	Payload         string
-	Status          string
-	AttemptsLeft    int16
-	AttemptsElapsed int16
-	NextAttemptTime *time.Time
+	ID  int64
+	Key *string
+
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	NextAttemptTime *time.Time
+
+	Payload         string
+	Status          string
+	Kind            int16
+	AttemptsLeft    int16
+	AttemptsElapsed int16
 }
