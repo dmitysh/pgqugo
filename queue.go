@@ -37,7 +37,7 @@ type DB interface {
 	GetPendingTasks(ctx context.Context, params entity.GetPendingTasksParams) ([]entity.FullTaskInfo, error)
 	SoftFailTask(ctx context.Context, params entity.SoftFailTasksParams) error
 	FailTask(ctx context.Context, taskID int64) error
-	SucceedTask(ctx context.Context, taskID int64) error
+	SucceedTask(ctx context.Context, taskID int64, cb Callback) error
 	DeleteTerminalTasks(ctx context.Context, params entity.DeleteTerminalTasksParams) error
 	RegisterJob(ctx context.Context, job string) error
 	ExecuteJob(ctx context.Context, params entity.ExecuteJobParams) error

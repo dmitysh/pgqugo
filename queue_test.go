@@ -200,6 +200,104 @@ func (s *pgxV5Suite) TestCreateTaskTx() {
 	s.Require().Equal(1, s.getTotalTasks(testTaskKind))
 }
 
+func (s *pgxV5Suite) TestOnSuccessCallback() {
+	ctx := context.Background()
+
+	sc := stats.NewLocalCollector()
+	h := newSuccessHandler(0)
+	h.cb = func(ctx context.Context) error {
+		tx := adapter.ExtractPGXv5Tx(ctx)
+		s.NotNil(tx)
+		return nil
+	}
+
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				h,
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0),
+				pgqugo.WithMaxAttempts(3),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+				pgqugo.WithStatsCollector(sc),
+			),
+		},
+	)
+	q.Start()
+	defer q.Stop()
+
+	const taskCount = 3
+	for i := 0; i < taskCount; i++ {
+		task := pgqugo.Task{
+			Kind:    testTaskKind,
+			Payload: "{}",
+		}
+		s.Require().NoError(q.CreateTask(ctx, task))
+	}
+
+	s.Require().Eventually(func() bool {
+		return s.getTasksByStatus(testTaskKind, pgqugo.TaskStatusSuccess) == 3
+	}, eventuallyTimeout, eventuallyPollingPeriod)
+
+	s.Require().Equal(3, h.callsCount())
+
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusNew))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusInProgress))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusSuccess))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusRetry))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusFailed))
+}
+
+func (s *pgxV5Suite) TestOnSuccessCallbackError() {
+	ctx := context.Background()
+
+	sc := stats.NewLocalCollector()
+	h := newSuccessHandler(0)
+	h.cb = func(ctx context.Context) error {
+		tx := adapter.ExtractPGXv5Tx(ctx)
+		s.NotNil(tx)
+		return errTest
+	}
+
+	q := pgqugo.New(
+		adapter.NewPGXv5(s.pool),
+		pgqugo.TaskKinds{
+			pgqugo.NewTaskKind(
+				testTaskKind,
+				h,
+				pgqugo.WithFetchPeriod(time.Millisecond*300, 0),
+				pgqugo.WithMaxAttempts(2),
+				pgqugo.WithAttemptDelayer(delayer.Linear(time.Millisecond*10, 0)),
+				pgqugo.WithStatsCollector(sc),
+			),
+		},
+	)
+	q.Start()
+	defer q.Stop()
+
+	const taskCount = 3
+	for i := 0; i < taskCount; i++ {
+		task := pgqugo.Task{
+			Kind:    testTaskKind,
+			Payload: "{}",
+		}
+		s.Require().NoError(q.CreateTask(ctx, task))
+	}
+
+	s.Require().Eventually(func() bool {
+		return s.getTasksByStatus(testTaskKind, pgqugo.TaskStatusFailed) == taskCount
+	}, eventuallyTimeout, eventuallyPollingPeriod)
+
+	s.Require().Equal(6, h.callsCount())
+
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusNew))
+	s.Require().Equal(int64(6), sc.GetTasksByStatus(pgqugo.TaskStatusInProgress))
+	s.Require().Equal(int64(0), sc.GetTasksByStatus(pgqugo.TaskStatusSuccess))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusRetry))
+	s.Require().Equal(int64(3), sc.GetTasksByStatus(pgqugo.TaskStatusFailed))
+}
+
 func (s *pgxV5Suite) getTasksByStatus(kind int16, status pgqugo.TaskStatus) int {
 	ctx, cancel := s.newContextWithDBTimeout()
 	defer cancel()
@@ -427,6 +525,7 @@ func (s *pgxV5Suite) getTotalTasks(kind int16) int {
 type successHandler struct {
 	baseHandler
 	dur time.Duration
+	cb  pgqugo.Callback
 }
 
 func newSuccessHandler(dur time.Duration) *successHandler {
@@ -435,7 +534,7 @@ func newSuccessHandler(dur time.Duration) *successHandler {
 	}
 }
 
-func (h *successHandler) HandleTask(ctx context.Context, _ pgqugo.ProcessingTask) error {
+func (h *successHandler) HandleTask(ctx context.Context, pt pgqugo.ProcessingTask) error {
 	h.callCounter.Add(1)
 
 	select {
@@ -443,6 +542,8 @@ func (h *successHandler) HandleTask(ctx context.Context, _ pgqugo.ProcessingTask
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+
+	pt.OnSuccess(h.cb)
 
 	return nil
 }

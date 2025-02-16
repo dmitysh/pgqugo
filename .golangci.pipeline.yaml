@@ -6,7 +6,9 @@ run:
   tests: true
 
 output:
-  formats: colored-line-number
+  formats:
+    - format: colored-line-number
+      path: stdout
   print-issued-lines: true
   print-linter-name: true
 

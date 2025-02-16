@@ -2,10 +2,12 @@ package pgqugo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 
 	"github.com/dmitysh/pgqugo/internal/entity"
+	"github.com/dmitysh/pgqugo/internal/inerrors"
 )
 
 type executor struct {
@@ -14,11 +16,25 @@ type executor struct {
 	db DB
 }
 
+type callbacks struct {
+	OnSuccess Callback
+}
+
+// Callback function being executed on task status change
+type Callback func(ctx context.Context) error
+
 // ProcessingTask used to operate with task in queue handlers
 type ProcessingTask struct {
 	Task
 	AttemptsLeft    int16
 	AttemptsElapsed int16
+
+	callbacks *callbacks
+}
+
+// OnSuccess sets a callback running in a transaction that moves the task to the pgqugo.TaskStatusSuccess
+func (p ProcessingTask) OnSuccess(cb Callback) {
+	p.callbacks.OnSuccess = cb
 }
 
 func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty, error) {
@@ -30,6 +46,7 @@ func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty,
 		},
 		AttemptsElapsed: task.AttemptsElapsed,
 		AttemptsLeft:    task.AttemptsLeft,
+		callbacks:       &callbacks{},
 	}
 
 	taskCtx, taskCancel := context.WithTimeout(ctx, e.tk.attemptTimeout)
@@ -38,6 +55,26 @@ func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty,
 
 	dbCtx, cancelDbCtx := context.WithTimeout(ctx, defaultDBTimeout)
 	defer cancelDbCtx()
+
+	if handlerErr == nil {
+		err := dbRetry(ctx, "SucceedTask", func() error {
+			succeedTaskErr := e.db.SucceedTask(dbCtx, task.ID, pt.callbacks.OnSuccess)
+			if errors.Is(succeedTaskErr, inerrors.ErrCallbackFailed) {
+				// OnSuccess callback error is considered the same as if the task's handler had failed
+				handlerErr = succeedTaskErr
+				return nil
+			}
+			return succeedTaskErr
+		}, e.tk.logger)
+		if err != nil {
+			return empty{}, fmt.Errorf("can't succeed task: %w", err)
+		}
+
+		// Double check because here can be callback's error now
+		if handlerErr == nil {
+			e.tk.statsCollector.IncSuccessTasks()
+		}
+	}
 
 	if handlerErr != nil {
 		if task.AttemptsLeft == 0 {
@@ -62,13 +99,6 @@ func (e executor) execute(ctx context.Context, task entity.FullTaskInfo) (empty,
 			e.tk.logger.Warnf(ctx, "[%d] task (%d) failed, error: %v", e.tk.id, task.ID, handlerErr)
 			e.tk.statsCollector.IncSoftFailedTasks()
 		}
-	} else {
-		err := dbRetry(ctx, "SucceedTask", func() error { return e.db.SucceedTask(dbCtx, task.ID) }, e.tk.logger)
-		if err != nil {
-			return empty{}, fmt.Errorf("can't succeed task: %w", err)
-		}
-
-		e.tk.statsCollector.IncSuccessTasks()
 	}
 
 	return empty{}, nil

@@ -3,7 +3,9 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"github.com/dmitysh/pgqugo"
 	"github.com/dmitysh/pgqugo/internal/entity"
 	"github.com/dmitysh/pgqugo/internal/inerrors"
 	"github.com/jackc/pgx/v5"
@@ -31,15 +33,7 @@ type pgxV5Executor interface {
 //
 // Task creation can be performed in a transaction using InjectPGXv5Tx
 func (p *PGXv5) CreateTask(ctx context.Context, task entity.FullTaskInfo) error {
-	var ex pgxV5Executor
-
-	if tx := extractPGXv5Tx(ctx); tx != nil {
-		ex = tx
-	} else {
-		ex = p.pool
-	}
-
-	_, err := ex.Exec(ctx, createTaskQuery, task.Kind, task.Key, task.Payload, task.AttemptsLeft)
+	_, err := p.executor(ctx).Exec(ctx, createTaskQuery, task.Kind, task.Key, task.Payload, task.AttemptsLeft)
 	if err != nil {
 		return err
 	}
@@ -63,9 +57,38 @@ func (p *PGXv5) GetPendingTasks(ctx context.Context, params entity.GetPendingTas
 	return taskInfos, nil
 }
 
-// SucceedTask marks the task as successfully completed and switches it to the status pgqugo.TaskStatusSuccess
-func (p *PGXv5) SucceedTask(ctx context.Context, taskID int64) error {
-	_, err := p.pool.Exec(ctx, succeedTaskQuery, taskID)
+// SucceedTask marks the task as successfully completed and switches it to the status pgqugo.TaskStatusSuccess.
+//
+// Injects the transaction into ctx.
+// This way, you can add database operations to the same transaction, which marks the task as completed successfully.
+// In case of an error inside the cb, it is assumed that the entire task has been completed unsuccessfully with the appropriate queue response to this
+func (p *PGXv5) SucceedTask(ctx context.Context, taskID int64, cb pgqugo.Callback) (err error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("can't begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+				err = fmt.Errorf("can't rollback tx: %w, initial error: %w", rollbackErr, err)
+			}
+		} else {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				err = fmt.Errorf("can't commit tx: %w", commitErr)
+			}
+		}
+	}()
+
+	ctx = InjectPGXv5Tx(ctx, tx)
+
+	if cb != nil {
+		err = cb(ctx)
+		if err != nil {
+			return fmt.Errorf("%w: %w", inerrors.ErrCallbackFailed, err)
+		}
+	}
+
+	_, err = p.executor(ctx).Exec(ctx, succeedTaskQuery, taskID)
 	if err != nil {
 		return err
 	}
@@ -133,15 +156,26 @@ func (p *PGXv5) ExecuteJob(ctx context.Context, params entity.ExecuteJobParams) 
 	return nil
 }
 
-// InjectPGXv5Tx adds a transaction to ctx
-//
-// Can be used for PGXv5.CreateTask
-func InjectPGXv5Tx(ctx context.Context, tx pgx.Tx) context.Context {
-	return context.WithValue(ctx, txKey{}, tx)
+func (p *PGXv5) executor(ctx context.Context) pgxV5Executor {
+	if tx := ExtractPGXv5Tx(ctx); tx != nil {
+		return tx
+	}
+	return p.pool
 }
 
-func extractPGXv5Tx(ctx context.Context) pgx.Tx {
-	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+// InjectPGXv5Tx adds a transaction to ctx
+//
+// Can be used for PGXv5.CreateTask and callbacks
+func InjectPGXv5Tx(ctx context.Context, tx pgx.Tx) context.Context {
+	return context.WithValue(ctx, entity.TxKey{}, tx)
+}
+
+// ExtractPGXv5Tx allows to get a transaction from inside the callback
+func ExtractPGXv5Tx(ctx context.Context) pgx.Tx {
+	if ctx == nil {
+		return nil
+	}
+	if tx, ok := ctx.Value(entity.TxKey{}).(pgx.Tx); ok {
 		return tx
 	}
 
